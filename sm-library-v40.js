@@ -1,7 +1,7 @@
 (() => {
   "use strict";
-  if (window.__SM_LIBRARY_V1_CLEAN__) return;
-  window.__SM_LIBRARY_V1_CLEAN__ = true;
+  if (window.__SM_LIBRARY_V1_CLEAN_V41__) return;
+  window.__SM_LIBRARY_V1_CLEAN_V41__ = true;
 
   const CDN_INDEX_URL = "https://skymotion-cdn.b-cdn.net/videos_index.json";
   const API_BASE = String(window.SM_API_BASE || "https://skymotion.onrender.com").replace(/\/$/, "");
@@ -50,6 +50,7 @@
   // ---------------- Helpers ----------------
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+
   function escapeHtml(str) {
     return String(str ?? "")
       .replaceAll("&", "&amp;")
@@ -82,6 +83,7 @@
   function getSess() {
     return new URLSearchParams(location.search).get("sess");
   }
+
   function buildUrl(path) {
     if (!SESSION_MODE) return path;
     const u = new URL(path, location.origin);
@@ -90,10 +92,11 @@
     if (sess) u.searchParams.set("sess", sess);
     return u.pathname + "?" + u.searchParams.toString();
   }
+
   const URLS = {
     map:     () => buildUrl("/map"),
     camera:  () => buildUrl("/assistant"),
-    library: () => buildUrl("/libraryy"),
+    library: () => buildUrl("/library"),
     profile: () => buildUrl("/profile"),
   };
   const go = (url) => { window.location.href = url; };
@@ -162,7 +165,7 @@
     return payload;
   }
 
-  // ---------------- Session cache + patch queue ----------------
+  // ---------------- Session cache ----------------
   const sessionCache = { value: null, at: 0 };
   async function fetchSession({ force = false } = {}) {
     const sess = getSess();
@@ -183,9 +186,14 @@
     }
   }
 
+  // ---------------- Patch queue (DEEP merge for JSON fields) ----------------
   let patchTimer = null;
   let patchPending = null;
+  let patchInFlight = false;
 
+  function isPlainObject(x) {
+    return !!x && typeof x === "object" && !Array.isArray(x);
+  }
   function mergeClean(obj) {
     const out = {};
     Object.keys(obj || {}).forEach((k) => {
@@ -194,28 +202,32 @@
     return out;
   }
 
+  function deepMergeJsonFields(prev, next) {
+    const out = { ...(prev || {}) };
+
+    Object.keys(next || {}).forEach((k) => {
+      const v = next[k];
+
+      // deep merge ONLY for known JSON fields that we patch partially
+      if ((k === "library_results_json" || k === "assistant_settings_json") && isPlainObject(v) && isPlainObject(out[k])) {
+        out[k] = { ...out[k], ...v };
+        return;
+      }
+
+      out[k] = v;
+    });
+
+    return out;
+  }
+
   function queuePatchSession(patch) {
     if (!SESSION_MODE || !getSess()) return;
 
-    patchPending = { ...(patchPending || {}), ...mergeClean(patch || {}) };
+    const cleaned = mergeClean(patch || {});
+    patchPending = deepMergeJsonFields(patchPending, cleaned);
+
     if (patchTimer) clearTimeout(patchTimer);
-
-    patchTimer = setTimeout(async () => {
-      const sess = getSess();
-      const body = patchPending;
-      patchPending = null;
-      patchTimer = null;
-
-      try {
-        await api(`/v1/sessions/${encodeURIComponent(sess)}`, {
-          method: "PATCH",
-          body: JSON.stringify(body),
-        });
-        await fetchSession({ force: true });
-      } catch (e) {
-        console.warn("[SM] PATCH session failed", e?.status, e?.payload || e);
-      }
-    }, 250);
+    patchTimer = setTimeout(() => flushPatchNow({ keepalive: false }), 250);
   }
 
   function queuePatchLibrary(partial) {
@@ -223,29 +235,39 @@
     queuePatchSession({ library_results_json: partial });
   }
 
-  async function flushPatchNow() {
+  async function flushPatchNow({ keepalive = false } = {}) {
     if (!SESSION_MODE || !getSess()) return;
+    if (patchInFlight) return;
     if (!patchPending) return;
-
-    if (patchTimer) {
-      clearTimeout(patchTimer);
-      patchTimer = null;
-    }
 
     const sess = getSess();
     const body = patchPending;
     patchPending = null;
+    if (patchTimer) { clearTimeout(patchTimer); patchTimer = null; }
 
+    patchInFlight = true;
     try {
       await api(`/v1/sessions/${encodeURIComponent(sess)}`, {
         method: "PATCH",
         body: JSON.stringify(body),
+        keepalive: !!keepalive,
       });
       await fetchSession({ force: true });
     } catch (e) {
-      console.warn("[SM] FLUSH PATCH failed", e?.status, e?.payload || e);
+      // якщо фейл — повертаємо назад, щоб не загубити
+      patchPending = deepMergeJsonFields(body, patchPending);
+      console.warn("[SM] PATCH session failed", e?.status, e?.payload || e);
+    } finally {
+      patchInFlight = false;
     }
   }
+
+  // Flush on leave/hidden so filtered_count точно долітає
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushPatchNow({ keepalive: true });
+  });
+  window.addEventListener("pagehide", () => flushPatchNow({ keepalive: true }));
+  window.addEventListener("beforeunload", () => flushPatchNow({ keepalive: true }));
 
   // ---------------- Saved moves (API only) ----------------
   let savedCache = [];
@@ -395,6 +417,7 @@
     locks.endmodal = !!open;
     applyOverflow();
   }
+
   if (endCancelBtn) endCancelBtn.addEventListener("click", () => setEndModal(false));
   if (endModalBackdrop) endModalBackdrop.addEventListener("click", () => setEndModal(false));
 
@@ -402,10 +425,11 @@
     const sess = getSess();
     if (!SESSION_MODE || !sess) { go("/profile"); return; }
 
+    // гарантуємо що filtered_count долетить
     if (Number.isFinite(filteredCount)) queuePatchLibrary({ filtered_count: clamp(filteredCount, 0, 999999) });
-    await flushPatchNow();
+    await flushPatchNow({ keepalive: true });
 
-    try { await api(`/v1/sessions/${encodeURIComponent(sess)}/done`, { method: "POST" }); }
+    try { await api(`/v1/sessions/${encodeURIComponent(sess)}/done`, { method: "POST", keepalive: true }); }
     catch (e) { console.warn("[SM] done failed", e?.status, e?.payload || e); }
 
     go("/profile");
@@ -415,6 +439,7 @@
     if (!SESSION_MODE) doneBtn.style.display = "none";
     else doneBtn.addEventListener("click", () => setEndModal(true));
   }
+
   if (endConfirmBtn && SESSION_MODE) {
     endConfirmBtn.addEventListener("click", async () => {
       setEndModal(false);
@@ -482,21 +507,11 @@
   ];
 
   const mapTags = {
-    env: {
-      "Open area":"open", "City / Urban":"urban", "Forest":"forest", "Near objects":"near_objects", "Tight space":"tight_space"
-    },
-    subject: {
-      "Person":"person", "Car / Bike":"car", "Building":"building", "Landscape":"landscape", "Atmosphere":"atmosphere"
-    },
-    risk: {
-      "Safe & calm":"calm", "Some risks":"some_risks", "No aggressive moves":"no_aggressive"
-    },
-    pilot: {
-      "Playing safe":"safe", "Normal":"normal", "Ready to experiment":"experiment"
-    },
-    mood: {
-      "Smooth":"smooth", "Epic":"epic", "Dynamic":"dynamic", "Tense":"tense", "Wow":"wow"
-    }
+    env: { "Open area":"open", "City / Urban":"urban", "Forest":"forest", "Near objects":"near_objects", "Tight space":"tight_space" },
+    subject: { "Person":"person", "Car / Bike":"car", "Building":"building", "Landscape":"landscape", "Atmosphere":"atmosphere" },
+    risk: { "Safe & calm":"calm", "Some risks":"some_risks", "No aggressive moves":"no_aggressive" },
+    pilot: { "Playing safe":"safe", "Normal":"normal", "Ready to experiment":"experiment" },
+    mood: { "Smooth":"smooth", "Epic":"epic", "Dynamic":"dynamic", "Tense":"tense", "Wow":"wow" }
   };
 
   function hasTag(arr, tag) {
@@ -531,35 +546,14 @@
     });
   }
 
-  // ---------------- filtered_count (anti-spam, only when changed) ----------------
-  let _lastFilteredCountSent = null;
-  let _filteredCountTimer = null;
-
-  function queueFilteredCount(count) {
-    if (!SESSION_MODE || !getSess()) return;
-
-    const n = clamp(Number(count) || 0, 0, 999999);
-    if (_lastFilteredCountSent === n) return;
-
-    if (_filteredCountTimer) clearTimeout(_filteredCountTimer);
-
-    _filteredCountTimer = setTimeout(() => {
-      _filteredCountTimer = null;
-      if (_lastFilteredCountSent === n) return;
-
-      _lastFilteredCountSent = n;
-      queuePatchLibrary({ filtered_count: n });
-    }, 350);
-  }
-
   function applyFilters() {
     filtered = filterVideos(allVideos);
     safeText(matchCount, String(filtered.length));
     visibleCount = 12;
     renderResults();
 
-    // store filtered_count only when changed (anti-spam)
-    queueFilteredCount(filtered.length);
+    // ВАЖЛИВО: це тепер не затирається іншими патчами
+    if (SESSION_MODE) queuePatchLibrary({ filtered_count: filtered.length });
   }
 
   function bookmarkSvg() {
@@ -622,6 +616,7 @@
   // ---------------- Fullscreen modal + opened_videos tracking ----------------
   let currentIndex = -1;
   const openedSet = new Set(); // in-memory canonical
+  let openedSeeded = false;
 
   function setModal(open) {
     modal.setAttribute("aria-hidden", open ? "false" : "true");
@@ -635,18 +630,12 @@
     modalContent.innerHTML = "";
   }
 
-  async function tryAppendOpenedVideo(sessionId, videoId) {
-    // If backend route doesn't exist -> 404/405, we'll fallback to PATCH opened_videos list.
-    try {
-      await api(`/v1/sessions/${encodeURIComponent(sessionId)}/opened-video`, {
-        method: "POST",
-        body: JSON.stringify({ video_id: String(videoId) })
-      });
-      return true;
-    } catch (e) {
-      if (e?.status === 404 || e?.status === 405) return false;
-      return false;
-    }
+  async function seedOpenedFromSession() {
+    if (openedSeeded) return;
+    openedSeeded = true;
+    const s = await fetchSession();
+    const arr = s?.library_results_json?.opened_videos;
+    if (Array.isArray(arr)) arr.forEach((x) => openedSet.add(String(x)));
   }
 
   async function trackOpened(video) {
@@ -656,21 +645,12 @@
     const id = String(getVideoId(video) || "").trim();
     if (!id) return;
 
-    // seed openedSet once from session if available
-    if (openedSet.size === 0) {
-      const s = await fetchSession();
-      const arr = s?.library_results_json?.opened_videos;
-      if (Array.isArray(arr)) arr.forEach((x) => openedSet.add(String(x)));
-    }
-
+    await seedOpenedFromSession();
     if (openedSet.has(id)) return;
-    openedSet.add(id);
 
-    // Try atomic backend append; else fallback to patch full list (backend merges).
-    const ok = await tryAppendOpenedVideo(sess, id);
-    if (!ok) {
-      queuePatchLibrary({ opened_videos: Array.from(openedSet) });
-    }
+    openedSet.add(id);
+    // PATCH list; backend merge збереже
+    queuePatchLibrary({ opened_videos: Array.from(openedSet) });
   }
 
   async function savePickedVideo(video) {
@@ -685,6 +665,7 @@
       picked_at: new Date().toISOString(),
     };
 
+    // library_results_json deep-merge → filtered_count НЕ зітреться
     queuePatchSession({
       library_results_json: { selected_video: selected },
       cover_image_url: selected.thumb || null,
@@ -729,6 +710,7 @@
     const video = filtered[currentIndex];
     if (!video || !video.videoUrl) return;
 
+    // track opened & picked (не блокує UI)
     trackOpened(video);
     savePickedVideo(video);
 
@@ -888,10 +870,6 @@
     clearOptions();
     if (backBtn) backBtn.disabled = true;
 
-    // reset filtered_count sender state (important)
-    _lastFilteredCountSent = null;
-    if (_filteredCountTimer) { clearTimeout(_filteredCountTimer); _filteredCountTimer = null; }
-
     await addBotTyped("Hi. Let’s pick the best moves for your scene.");
     await addBotTyped(steps[0].text);
 
@@ -923,7 +901,8 @@
     await getMember(12000).catch(() => null);
 
     await hydrateSavedCache();
-    await fetchSession({ force: true });
+    await fetchSession({ force: true }); // primes cache
+    await seedOpenedFromSession();
     refreshPill();
 
     await addBotTyped("Hi. Let’s pick the best moves for your scene.");
