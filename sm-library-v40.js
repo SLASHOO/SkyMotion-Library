@@ -183,7 +183,6 @@
     }
   }
 
-  // Debounced patch (so we don't spam backend)
   let patchTimer = null;
   let patchPending = null;
 
@@ -208,12 +207,10 @@
       patchTimer = null;
 
       try {
-        // IMPORTANT: backend already merges library_results_json safely.
         await api(`/v1/sessions/${encodeURIComponent(sess)}`, {
           method: "PATCH",
           body: JSON.stringify(body),
         });
-        // refresh cache lightly
         await fetchSession({ force: true });
       } catch (e) {
         console.warn("[SM] PATCH session failed", e?.status, e?.payload || e);
@@ -224,6 +221,30 @@
   function queuePatchLibrary(partial) {
     if (!partial || typeof partial !== "object") return;
     queuePatchSession({ library_results_json: partial });
+  }
+
+  async function flushPatchNow() {
+    if (!SESSION_MODE || !getSess()) return;
+    if (!patchPending) return;
+
+    if (patchTimer) {
+      clearTimeout(patchTimer);
+      patchTimer = null;
+    }
+
+    const sess = getSess();
+    const body = patchPending;
+    patchPending = null;
+
+    try {
+      await api(`/v1/sessions/${encodeURIComponent(sess)}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      await fetchSession({ force: true });
+    } catch (e) {
+      console.warn("[SM] FLUSH PATCH failed", e?.status, e?.payload || e);
+    }
   }
 
   // ---------------- Saved moves (API only) ----------------
@@ -381,8 +402,8 @@
     const sess = getSess();
     if (!SESSION_MODE || !sess) { go("/profile"); return; }
 
-    // store filtered_count as fallback (if user opened 0)
     if (Number.isFinite(filteredCount)) queuePatchLibrary({ filtered_count: clamp(filteredCount, 0, 999999) });
+    await flushPatchNow();
 
     try { await api(`/v1/sessions/${encodeURIComponent(sess)}/done`, { method: "POST" }); }
     catch (e) { console.warn("[SM] done failed", e?.status, e?.payload || e); }
@@ -510,14 +531,35 @@
     });
   }
 
+  // ---------------- filtered_count (anti-spam, only when changed) ----------------
+  let _lastFilteredCountSent = null;
+  let _filteredCountTimer = null;
+
+  function queueFilteredCount(count) {
+    if (!SESSION_MODE || !getSess()) return;
+
+    const n = clamp(Number(count) || 0, 0, 999999);
+    if (_lastFilteredCountSent === n) return;
+
+    if (_filteredCountTimer) clearTimeout(_filteredCountTimer);
+
+    _filteredCountTimer = setTimeout(() => {
+      _filteredCountTimer = null;
+      if (_lastFilteredCountSent === n) return;
+
+      _lastFilteredCountSent = n;
+      queuePatchLibrary({ filtered_count: n });
+    }, 350);
+  }
+
   function applyFilters() {
     filtered = filterVideos(allVideos);
     safeText(matchCount, String(filtered.length));
     visibleCount = 12;
     renderResults();
 
-    // store filtered_count continuously (fallback if opened_videos empty)
-    if (SESSION_MODE) queuePatchLibrary({ filtered_count: filtered.length });
+    // store filtered_count only when changed (anti-spam)
+    queueFilteredCount(filtered.length);
   }
 
   function bookmarkSvg() {
@@ -594,7 +636,7 @@
   }
 
   async function tryAppendOpenedVideo(sessionId, videoId) {
-    // Best-case: backend endpoint that appends uniq (no races). If not exists, fallback to PATCH opened_videos list.
+    // If backend route doesn't exist -> 404/405, we'll fallback to PATCH opened_videos list.
     try {
       await api(`/v1/sessions/${encodeURIComponent(sessionId)}/opened-video`, {
         method: "POST",
@@ -603,7 +645,6 @@
       return true;
     } catch (e) {
       if (e?.status === 404 || e?.status === 405) return false;
-      // other errors: still fallback
       return false;
     }
   }
@@ -644,7 +685,6 @@
       picked_at: new Date().toISOString(),
     };
 
-    // Patch ONLY what we need. Backend merges library_results_json safely.
     queuePatchSession({
       library_results_json: { selected_video: selected },
       cover_image_url: selected.thumb || null,
@@ -689,9 +729,7 @@
     const video = filtered[currentIndex];
     if (!video || !video.videoUrl) return;
 
-    // track opened (does not block UI)
     trackOpened(video);
-    // save picked (does not block UI)
     savePickedVideo(video);
 
     buildPlayer(video);
@@ -850,6 +888,10 @@
     clearOptions();
     if (backBtn) backBtn.disabled = true;
 
+    // reset filtered_count sender state (important)
+    _lastFilteredCountSent = null;
+    if (_filteredCountTimer) { clearTimeout(_filteredCountTimer); _filteredCountTimer = null; }
+
     await addBotTyped("Hi. Let’s pick the best moves for your scene.");
     await addBotTyped(steps[0].text);
 
@@ -878,11 +920,10 @@
   (async () => {
     if (backBtn) backBtn.disabled = true;
 
-    // login presence check early (don’t crash UI)
     await getMember(12000).catch(() => null);
 
     await hydrateSavedCache();
-    await fetchSession({ force: true }); // primes cache (important for opened_videos seeding)
+    await fetchSession({ force: true });
     refreshPill();
 
     await addBotTyped("Hi. Let’s pick the best moves for your scene.");
@@ -890,6 +931,6 @@
     renderOptions();
 
     await loadVideos();
-    renderResults(); // ensure saved state painted
+    renderResults();
   })();
 })();
