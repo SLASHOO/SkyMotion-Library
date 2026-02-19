@@ -96,7 +96,7 @@
   const URLS = {
     map:     () => buildUrl("/map"),
     camera:  () => buildUrl("/assistant"),
-    library: () => buildUrl("/library"),
+    library: () => buildUrl("/libraryy"),
     profile: () => buildUrl("/profile"),
   };
   const go = (url) => { window.location.href = url; };
@@ -432,7 +432,7 @@
     try { await api(`/v1/sessions/${encodeURIComponent(sess)}/done`, { method: "POST", keepalive: true }); }
     catch (e) { console.warn("[SM] done failed", e?.status, e?.payload || e); }
 
-    go("/profile");
+    go(URLS.profile());
   }
 
   if (doneBtn) {
