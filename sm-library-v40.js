@@ -1,4 +1,3 @@
-<script>
 (() => {
   "use strict";
   if (window.__SM_LIBRARY_V1_CLEAN_V41__) return;
@@ -902,4 +901,3 @@
     renderResults();
   })();
 })();
-</script>
