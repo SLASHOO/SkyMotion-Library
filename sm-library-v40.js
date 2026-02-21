@@ -10,14 +10,6 @@
   const scope = $("sm-library-scope");
   if (!scope) return;
 
-  // --- ensure header height var is correct (in case header embed loaded earlier/later)
-  const header = document.getElementById("smHeader");
-  if (header) {
-    const setH = () => document.documentElement.style.setProperty("--smHeaderH", header.getBoundingClientRect().height + "px");
-    setH();
-    window.addEventListener("resize", setH);
-  }
-
   // ---------------- DOM ----------------
   const pill = $("sm-sessionpill");
   const smBackBtn = $("smBackBtn");
@@ -212,14 +204,19 @@
 
   function deepMergeJsonFields(prev, next) {
     const out = { ...(prev || {}) };
+
     Object.keys(next || {}).forEach((k) => {
       const v = next[k];
+
+      // deep merge ONLY for known JSON fields that we patch partially
       if ((k === "library_results_json" || k === "assistant_settings_json") && isPlainObject(v) && isPlainObject(out[k])) {
         out[k] = { ...out[k], ...v };
         return;
       }
+
       out[k] = v;
     });
+
     return out;
   }
 
@@ -257,6 +254,7 @@
       });
       await fetchSession({ force: true });
     } catch (e) {
+      // якщо фейл — повертаємо назад, щоб не загубити
       patchPending = deepMergeJsonFields(body, patchPending);
       console.warn("[SM] PATCH session failed", e?.status, e?.payload || e);
     } finally {
@@ -264,6 +262,7 @@
     }
   }
 
+  // Flush on leave/hidden so filtered_count точно долітає
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") flushPatchNow({ keepalive: true });
   });
@@ -305,8 +304,11 @@
     const id = getVideoId(video);
 
     if (isSaved(id)) {
-      try { await api(`/v1/saved-moves/${encodeURIComponent(id)}`, { method: "DELETE" }); }
-      catch (e) { console.warn("[SM] unsave failed", e?.status, e?.payload || e); }
+      try {
+        await api(`/v1/saved-moves/${encodeURIComponent(id)}`, { method: "DELETE" });
+      } catch (e) {
+        console.warn("[SM] unsave failed", e?.status, e?.payload || e);
+      }
       await hydrateSavedCache();
       return false;
     }
@@ -324,8 +326,11 @@
       mood: video?.mood || [],
     };
 
-    try { await api(`/v1/saved-moves`, { method: "POST", body: JSON.stringify(payload) }); }
-    catch (e) { console.warn("[SM] save failed", e?.status, e?.payload || e); }
+    try {
+      await api(`/v1/saved-moves`, { method: "POST", body: JSON.stringify(payload) });
+    } catch (e) {
+      console.warn("[SM] save failed", e?.status, e?.payload || e);
+    }
 
     await hydrateSavedCache();
     return true;
@@ -339,7 +344,7 @@
     document.body.style.overflow = lock ? "hidden" : "";
   }
 
-  // ---------------- Session pill ----------------
+  // ---------------- Session pill (API only) ----------------
   async function refreshPill() {
     if (!pill) return;
     if (!SESSION_MODE) { pill.style.display = "none"; return; }
@@ -420,6 +425,7 @@
     const sess = getSess();
     if (!SESSION_MODE || !sess) { go("/profile"); return; }
 
+    // гарантуємо що filtered_count долетить
     if (Number.isFinite(filteredCount)) queuePatchLibrary({ filtered_count: clamp(filteredCount, 0, 999999) });
     await flushPatchNow({ keepalive: true });
 
@@ -441,6 +447,7 @@
     });
   }
 
+  // ESC priority
   window.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     if (endModal && endModal.getAttribute("aria-hidden") === "false") { setEndModal(false); return; }
@@ -545,6 +552,7 @@
     visibleCount = 12;
     renderResults();
 
+    // ВАЖЛИВО: це тепер не затирається іншими патчами
     if (SESSION_MODE) queuePatchLibrary({ filtered_count: filtered.length });
   }
 
@@ -607,7 +615,7 @@
 
   // ---------------- Fullscreen modal + opened_videos tracking ----------------
   let currentIndex = -1;
-  const openedSet = new Set();
+  const openedSet = new Set(); // in-memory canonical
   let openedSeeded = false;
 
   function setModal(open) {
@@ -641,6 +649,7 @@
     if (openedSet.has(id)) return;
 
     openedSet.add(id);
+    // PATCH list; backend merge збереже
     queuePatchLibrary({ opened_videos: Array.from(openedSet) });
   }
 
@@ -656,6 +665,7 @@
       picked_at: new Date().toISOString(),
     };
 
+    // library_results_json deep-merge → filtered_count НЕ зітреться
     queuePatchSession({
       library_results_json: { selected_video: selected },
       cover_image_url: selected.thumb || null,
@@ -700,6 +710,7 @@
     const video = filtered[currentIndex];
     if (!video || !video.videoUrl) return;
 
+    // track opened & picked (не блокує UI)
     trackOpened(video);
     savePickedVideo(video);
 
@@ -758,6 +769,7 @@
     };
   }
 
+  // Grid click handler
   grid.addEventListener("click", async (e) => {
     const saveBtn = e.target.closest(".sm-save");
     if (saveBtn) {
@@ -889,7 +901,7 @@
     await getMember(12000).catch(() => null);
 
     await hydrateSavedCache();
-    await fetchSession({ force: true });
+    await fetchSession({ force: true }); // primes cache
     await seedOpenedFromSession();
     refreshPill();
 
