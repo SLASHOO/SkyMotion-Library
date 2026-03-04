@@ -83,11 +83,11 @@
       const hasSrc = normalizeUrl(img.getAttribute("src"));
       if (!hasSrc) img.src = FALLBACK_THUMB;
 
-      img.addEventListener("error", () => {
+            img.addEventListener("error", () => {
         if (img.dataset.smFallbackApplied === "1") return;
         img.dataset.smFallbackApplied = "1";
         img.src = FALLBACK_THUMB;
-      });
+      }, { once: true });
     });
   }
 
@@ -475,21 +475,10 @@
     return card;
   }
 
-  const FALLBACK_THUMB = "https://skymotion-cdn.b-cdn.net/thumb.jpg";
-
-function pickThumb(...candidates) {
-  for (const c of candidates) {
-    const s = (c ?? "").toString().trim();
-    if (s) return s;
-  }
-  return FALLBACK_THUMB;
-}
-
 function renderPlanCard(p, i) {
   const stepsArr = Array.isArray(p?.steps) ? p.steps : [];
   const titleRaw = p?.title || "Cinematic plan";
 
-  // ✅ Головна фотка: thumb_a → step[0].thumb → thumb → FALLBACK
   const cover = pickThumb(p?.thumb_a, stepsArr?.[0]?.thumb, p?.thumb, FALLBACK_THUMB);
 
   const shotsCount = Number(p?.shots_count) || stepsArr.length || 0;
@@ -515,15 +504,11 @@ function renderPlanCard(p, i) {
       </div>
 
       <h3 class="planName">${escapeHtml(titleRaw)}</h3>
-
       ${desc ? `<div class="planDesc">${escapeHtml(desc)}</div>` : ``}
     </div>
   `;
 
-  // якщо зламається картинка — підставимо fallback
-  const img = card.querySelector("img");
-  if (img) img.addEventListener("error", () => { img.src = FALLBACK_THUMB; }, { once: true });
-
+  attachImgFallback(card);
   return card;
 }
 
