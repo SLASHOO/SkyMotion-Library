@@ -485,49 +485,21 @@
 
   // ✅ FIXED: proper closing tags (no broken DOM)
   function renderPlanCard(p, i) {
-    const card = document.createElement("div");
-    card.className = "cardPlan";
-    card.dataset.index = String(i);
-    card.dataset.kind = "plan";
-    card.dataset.itemId = String(p?.id || "");
+  const card = document.createElement("div");
+  card.className = "cardPlan";
+  card.dataset.index = String(i);
+  card.dataset.kind = "plan";
 
-    const stepsArr = Array.isArray(p?.steps) ? p.steps : [];
-    const shots = stepsArr.length ? `${stepsArr.length} shots` : "Plan";
-    const total = p?.total_duration || "";
-    const desc = p?.description || "";
-    const title = p?.title || "Cinematic plan";
-
-    const placeholder = "https://skymotion-cdn.b-cdn.net/thumb.jpg";
-    const a = p?.thumb_a || stepsArr?.[0]?.thumb || placeholder;
-    const b = p?.thumb_b || stepsArr?.[1]?.thumb || placeholder;
-
-    card.innerHTML = `
-      <div class="planThumbs">
-        <div class="planShot planShot--a">
-          <img src="${a}" alt="${escapeHtml(title)} shot A" loading="lazy">
-        </div>
-        <div class="planShot planShot--b">
-          <img src="${b}" alt="${escapeHtml(title)} shot B" loading="lazy">
-        </div>
+  card.innerHTML = `
+    <div style="position:absolute; inset:0; display:flex; align-items:flex-end; padding:14px;">
+      <div style="background:rgba(0,0,0,.6); border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:12px; width:100%;">
+        <div style="font-weight:900;">${escapeHtml(p?.title || "Plan")}</div>
+        <div style="opacity:.7; font-weight:800; font-size:12px;">id: ${escapeHtml(p?.id || "")}</div>
       </div>
-
-      <div class="planTop">
-        <div class="planPills">
-          <span class="pill pill--plan"><span class="pillDot"></span>Plan</span>
-          ${total ? `<span class="pill">${escapeHtml(total)}</span>` : ``}
-          <span class="pill">${escapeHtml(shots)}</span>
-        </div>
-      </div>
-
-      <div class="planMeta">
-        <h3 class="planName">${escapeHtml(title)}</h3>
-        <div class="planStats">
-          ${desc ? `<span>${escapeHtml(desc)}</span>` : ``}
-        </div>
-      </div>
-    `;
-    return card;
-  }
+    </div>
+  `;
+  return card;
+}
 
   function renderResults() {
     grid.innerHTML = "";
