@@ -1,7 +1,11 @@
 /* =========================================================
-  SKYMOTION — LIBRARY v1 (STANDALONE) + PLANS (v1)
-  - Plans + Moves mixed by default (no plan filtering yet)
+  SKYMOTION — LIBRARY v1 (STANDALONE) + PLANS (v1) — CLEAN
+  - Plans + Moves mixed (no filtering yet)
   - Uses existing #modal overlay for BOTH video + plan
+  - Fixes:
+    1) Plan card HTML closed properly (no broken DOM)
+    2) No leaking modalBackdrop listeners (cleanup works)
+    3) No duplicate ESC handlers (global only)
 ========================================================= */
 
 (() => {
@@ -10,10 +14,13 @@
   window.__SM_LIBRARY_V1_STANDALONE_PLANS_V1__ = true;
 
   const CDN_INDEX_URL =
-  "https://skymotion-cdn.b-cdn.net/videos_index.json?v=" + Date.now();
-  const API_BASE = String(window.SM_API_BASE || "https://skymotion.onrender.com").replace(/\/$/, "");
+    "https://skymotion-cdn.b-cdn.net/videos_index.json?v=" + Date.now();
+
+  const API_BASE = String(window.SM_API_BASE || "https://skymotion.onrender.com")
+    .replace(/\/$/, "");
 
   const $ = (id) => document.getElementById(id);
+
   const scope = $("sm-library-scope");
   if (!scope) return;
 
@@ -29,21 +36,28 @@
   const resetBtn = $("resetBtn");
   const backBtn = $("backBtn");
   const moreBtn = $("moreBtn");
-
   const resultsHead = $("resultsHead");
 
   const modal = $("modal");
   const modalBackdrop = $("modalBackdrop");
   const modalContent = $("modalContent");
 
-  if (!assistant || !chat || !grid || !matchCount || !resetBtn || !modal || !modalBackdrop || !modalContent) {
+  if (
+    !assistant ||
+    !chat ||
+    !grid ||
+    !matchCount ||
+    !resetBtn ||
+    !modal ||
+    !modalBackdrop ||
+    !modalContent
+  ) {
     console.warn("[SM] Missing required elements. Stop.");
     return;
   }
 
   // ---------------- Helpers ----------------
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 
   function escapeHtml(str) {
     return String(str ?? "")
@@ -53,8 +67,14 @@
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
   }
-  function safeText(el, t) { if (el) el.textContent = String(t ?? ""); }
-  function isPlan(x){ return String(x?.kind || "").toLowerCase() === "plan"; }
+
+  function safeText(el, t) {
+    if (el) el.textContent = String(t ?? "");
+  }
+
+  function isPlan(x) {
+    return String(x?.kind || "").toLowerCase() === "plan";
+  }
 
   // ---------------- Memberstack (cached) ----------------
   let _memberCache = null;
@@ -62,7 +82,7 @@
 
   async function getMember(timeout = 12000) {
     const now = Date.now();
-    if (_memberCache && (now - _memberCacheAt) < 15000) return _memberCache;
+    if (_memberCache && now - _memberCacheAt < 15000) return _memberCache;
 
     const t0 = Date.now();
     while (Date.now() - t0 < timeout) {
@@ -77,7 +97,7 @@
             _memberCacheAt = Date.now();
             return m;
           }
-        } catch (e) {}
+        } catch (_) {}
       }
       await sleep(250);
     }
@@ -96,14 +116,25 @@
     const headers = new Headers(opts.headers || {});
     headers.set("x-ms-id", member.id);
 
-    if (opts.body && !(opts.body instanceof FormData) && !headers.has("Content-Type")) {
+    if (
+      opts.body &&
+      !(opts.body instanceof FormData) &&
+      !headers.has("Content-Type")
+    ) {
       headers.set("Content-Type", "application/json");
     }
 
-    const r = await fetch(API_BASE + path, { method: opts.method || "GET", ...opts, headers });
+    const r = await fetch(API_BASE + path, {
+      method: opts.method || "GET",
+      ...opts,
+      headers,
+    });
+
     const ct = (r.headers.get("content-type") || "").toLowerCase();
     const isJson = ct.includes("application/json");
-    const payload = isJson ? await r.json().catch(() => null) : await r.text().catch(() => null);
+    const payload = isJson
+      ? await r.json().catch(() => null)
+      : await r.text().catch(() => null);
 
     if (!r.ok) {
       const e = new Error("HTTP_" + r.status);
@@ -116,18 +147,33 @@
 
   // ---------------- Saved moves (API only) ----------------
   let savedCache = [];
+
   function getVideoId(v) {
-    return v?.id || v?.slug || v?.videoUrl || v?.video_url || ((v?.title || "") + "|" + (v?.duration || ""));
+    return (
+      v?.id ||
+      v?.slug ||
+      v?.videoUrl ||
+      v?.video_url ||
+      ((v?.title || "") + "|" + (v?.duration || ""))
+    );
   }
 
   async function hydrateSavedCache() {
     try {
-      const data = await api(`/v1/saved-moves?limit=200&offset=0`, { method: "GET" });
-      const list =
-        Array.isArray(data) ? data :
-        Array.isArray(data?.items) ? data.items :
-        Array.isArray(data?.saved_moves) ? data.saved_moves :
-        Array.isArray(data?.moves) ? data.moves : [];
+      const data = await api(`/v1/saved-moves?limit=200&offset=0`, {
+        method: "GET",
+      });
+
+      const list = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.items)
+        ? data.items
+        : Array.isArray(data?.saved_moves)
+        ? data.saved_moves
+        : Array.isArray(data?.moves)
+        ? data.moves
+        : [];
+
       savedCache = (list || [])
         .map((x) => ({
           ...x,
@@ -183,6 +229,7 @@
 
   // ---------------- UI locks ----------------
   const locks = { drawer: false, modal: false };
+
   function applyOverflow() {
     const lock = locks.drawer || locks.modal;
     document.documentElement.style.overflow = lock ? "hidden" : "";
@@ -190,7 +237,10 @@
   }
 
   // ---------------- Drawer open/close ----------------
-  function isDrawerMode() { return window.matchMedia("(max-width: 900px)").matches; }
+  function isDrawerMode() {
+    return window.matchMedia("(max-width: 900px)").matches;
+  }
+
   function openAssistant() {
     assistant.classList.add("active");
     if (assistantBackdropEl) assistantBackdropEl.style.display = "block";
@@ -198,6 +248,7 @@
     locks.drawer = true;
     applyOverflow();
   }
+
   function closeAssistant() {
     assistant.classList.remove("active");
     if (assistantBackdropEl) assistantBackdropEl.style.display = "none";
@@ -228,20 +279,31 @@
   }
 
   function closeModal() {
-    try { modal._cleanup && modal._cleanup(); } catch (e) {}
+    try {
+      modal._cleanup && modal._cleanup();
+    } catch (_) {}
+    modal._cleanup = null;
+
     setModal(false);
     modalContent.innerHTML = "";
     modal.classList.remove("isPlan");
   }
 
-  // ESC priority
+  // Global ESC priority (ONLY ONE place)
   window.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    if (modal && modal.getAttribute("aria-hidden") === "false") { closeModal(); return; }
-    if (assistant && assistant.classList.contains("active")) { closeAssistant(); return; }
+
+    if (modal.getAttribute("aria-hidden") === "false") {
+      closeModal();
+      return;
+    }
+    if (assistant.classList.contains("active")) {
+      closeAssistant();
+      return;
+    }
   });
 
-  // ---------------- Chat / filters (keep UI, no real filtering yet) ----------------
+  // ---------------- Chat / filters (UI-only for now) ----------------
   let isBusy = false;
   const history = [];
 
@@ -251,12 +313,17 @@
     if (backBtn) backBtn.disabled = v || history.length === 0;
     chat.querySelectorAll(".opt").forEach((b) => (b.disabled = v));
   }
-  function scrollChatBottom() { chat.scrollTop = chat.scrollHeight; }
+
+  function scrollChatBottom() {
+    chat.scrollTop = chat.scrollHeight;
+  }
 
   function addBotRow() {
     const row = document.createElement("div");
     row.className = "msg msg--bot";
-    row.innerHTML = `<div class="avatar"></div><div class="bubble"><span class="text"></span><span class="caret"></span></div>`;
+    row.innerHTML =
+      `<div class="avatar"></div>` +
+      `<div class="bubble"><span class="text"></span><span class="caret"></span></div>`;
     chat.appendChild(row);
     scrollChatBottom();
     return row;
@@ -264,6 +331,7 @@
 
   async function addBotTyped(text) {
     setBusy(true);
+
     const safe = escapeHtml(text);
     const row = addBotRow();
     const textEl = row.querySelector(".text");
@@ -274,27 +342,35 @@
       scrollChatBottom();
       await sleep(10 + Math.random() * 16);
     }
+
     await sleep(120);
     if (caretEl) caretEl.remove();
+
     setBusy(false);
   }
 
-  function clearOptions() { chat.querySelectorAll(".options").forEach((el) => el.remove()); }
+  function clearOptions() {
+    chat.querySelectorAll(".options").forEach((el) => el.remove());
+  }
 
-  // (UI only)
   const steps = [
-    { key:"env",     text:"Where are you flying?",            options:["Open area","City / Urban","Forest","Near objects","Tight space"] },
-    { key:"risk",    text:"How safe does it feel here?",      options:["Safe & calm","Some risks","No aggressive moves"] },
-    { key:"subject", text:"What are you filming?",            options:["Person","Car / Bike","Building","Landscape","Atmosphere"] },
-    { key:"pilot",   text:"How confident are you right now?", options:["Playing safe","Normal","Ready to experiment"] },
-    { key:"mood",    text:"What vibe do you want?",           options:["Smooth","Epic","Dynamic","Tense","Wow"] },
+    { key: "env",     text: "Where are you flying?",            options: ["Open area", "City / Urban", "Forest", "Near objects", "Tight space"] },
+    { key: "risk",    text: "How safe does it feel here?",      options: ["Safe & calm", "Some risks", "No aggressive moves"] },
+    { key: "subject", text: "What are you filming?",            options: ["Person", "Car / Bike", "Building", "Landscape", "Atmosphere"] },
+    { key: "pilot",   text: "How confident are you right now?", options: ["Playing safe", "Normal", "Ready to experiment"] },
+    { key: "mood",    text: "What vibe do you want?",           options: ["Smooth", "Epic", "Dynamic", "Tense", "Wow"] },
   ];
 
   const state = {};
   let stepIndex = 0;
 
+  // ---------------- Results: render mixed plans + moves ----------------
+  let allItems = [];
+  let filtered = [];
+  let visibleCount = 12;
+
   function applyFilters() {
-    // NOW: no real filtering, just show everything
+    // TODO: real filtering later
     filtered = allItems.slice();
     safeText(matchCount, String(filtered.length));
     visibleCount = 12;
@@ -343,20 +419,22 @@
     scrollChatBottom();
   }
 
-  if (backBtn) backBtn.addEventListener("click", () => {
-    if (isBusy) return;
-    const last = history.pop();
-    backBtn.disabled = history.length === 0;
-    if (!last) return;
+  if (backBtn) {
+    backBtn.addEventListener("click", () => {
+      if (isBusy) return;
+      const last = history.pop();
+      backBtn.disabled = history.length === 0;
+      if (!last) return;
 
-    stepIndex = last.stepIndex;
-    delete state[last.key];
-    chat.innerHTML = last.prevChatHTML;
+      stepIndex = last.stepIndex;
+      delete state[last.key];
+      chat.innerHTML = last.prevChatHTML;
 
-    applyFilters();
-    renderOptions();
-    scrollChatBottom();
-  });
+      applyFilters();
+      renderOptions();
+      scrollChatBottom();
+    });
+  }
 
   resetBtn.addEventListener("click", async () => {
     if (isBusy) return;
@@ -374,11 +452,6 @@
     if (allItems.length) applyFilters();
     renderOptions();
   });
-
-  // ---------------- Results: render mixed plans + moves ----------------
-  let allItems = [];
-  let filtered = [];
-  let visibleCount = 12;
 
   function bookmarkSvg() {
     return `<svg viewBox="0 0 24 24" aria-hidden="true">
@@ -410,6 +483,7 @@
     return card;
   }
 
+  // ✅ FIXED: proper closing tags (no broken DOM)
   function renderPlanCard(p, i) {
     const card = document.createElement("div");
     card.className = "cardPlan";
@@ -417,25 +491,23 @@
     card.dataset.kind = "plan";
     card.dataset.itemId = String(p?.id || "");
 
-    const steps = Array.isArray(p?.steps) ? p.steps : [];
-    const shots = steps.length ? `${steps.length} shots` : "Plan";
+    const stepsArr = Array.isArray(p?.steps) ? p.steps : [];
+    const shots = stepsArr.length ? `${stepsArr.length} shots` : "Plan";
     const total = p?.total_duration || "";
     const desc = p?.description || "";
-    const placeholder = "https://skymotion-cdn.b-cdn.net/thumb.jpg";
-
-    const a = p?.thumb_a || steps?.[0]?.thumb || placeholder;
-    const b = p?.thumb_b || steps?.[1]?.thumb || placeholder;
     const title = p?.title || "Cinematic plan";
+
+    const placeholder = "https://skymotion-cdn.b-cdn.net/thumb.jpg";
+    const a = p?.thumb_a || stepsArr?.[0]?.thumb || placeholder;
+    const b = p?.thumb_b || stepsArr?.[1]?.thumb || placeholder;
 
     card.innerHTML = `
       <div class="planThumbs">
         <div class="planShot planShot--a">
           <img src="${a}" alt="${escapeHtml(title)} shot A" loading="lazy">
-          <span class="shotTag">Shot 1</span>
         </div>
         <div class="planShot planShot--b">
           <img src="${b}" alt="${escapeHtml(title)} shot B" loading="lazy">
-          <span class="shotTag">Shot 2</span>
         </div>
       </div>
 
@@ -451,13 +523,14 @@
         <h3 class="planName">${escapeHtml(title)}</h3>
         <div class="planStats">
           ${desc ? `<span>${escapeHtml(desc)}</span>` : ``}
+        </div>
+      </div>
     `;
     return card;
   }
 
   function renderResults() {
     grid.innerHTML = "";
-
     const slice = filtered.slice(0, visibleCount);
 
     if (!slice.length) {
@@ -468,7 +541,6 @@
       return;
     }
 
-    // show head only if at least one plan is present (optional)
     const hasAnyPlan = slice.some(isPlan);
     if (resultsHead) resultsHead.style.display = hasAnyPlan ? "flex" : "none";
 
@@ -481,10 +553,12 @@
     safeText(matchCount, String(filtered.length));
   }
 
-  if (moreBtn) moreBtn.addEventListener("click", () => {
-    visibleCount += 12;
-    renderResults();
-  });
+  if (moreBtn) {
+    moreBtn.addEventListener("click", () => {
+      visibleCount += 12;
+      renderResults();
+    });
+  }
 
   function syncCardSaveUI(video) {
     const id = getVideoId(video);
@@ -501,8 +575,7 @@
   let currentIndex = -1;
 
   function buildVideoPlayer(video) {
-    const id = getVideoId(video);
-    const saved = isSaved(id);
+    const saved = isSaved(getVideoId(video));
 
     modalContent.innerHTML = `
       <div class="player">
@@ -530,13 +603,13 @@
   async function openPlayer(index) {
     if (!filtered.length) return;
 
-    // Skip if user clicked a plan item
     const item = filtered[index];
     if (!item || isPlan(item)) return;
 
     if (modal._cleanup) modal._cleanup();
-    currentIndex = index;
+    modal._cleanup = null;
 
+    currentIndex = index;
     const video = filtered[currentIndex];
     if (!video || !video.videoUrl) return;
 
@@ -553,26 +626,30 @@
     const saveMoveBtn = $("saveMoveBtn");
 
     const goPrev = () => {
-      // find previous MOVE
       for (let i = currentIndex - 1; i >= 0; i--) {
         if (!isPlan(filtered[i])) return openPlayer(i);
       }
     };
+
     const goNext = () => {
       for (let i = currentIndex + 1; i < filtered.length; i++) {
         if (!isPlan(filtered[i])) return openPlayer(i);
       }
     };
-    const onEsc = (e) => { if (e.key === "Escape") closeModal(); };
+
+    const onBackdrop = () => closeModal();
 
     if (closeBtn) closeBtn.addEventListener("click", closeModal);
     if (prevBtn) prevBtn.addEventListener("click", goPrev);
     if (nextBtn) nextBtn.addEventListener("click", goNext);
 
     if (back10) back10.addEventListener("click", () => {
+      if (!player) return;
       player.currentTime = Math.max(0, (player.currentTime || 0) - 10);
     });
+
     if (fwd10) fwd10.addEventListener("click", () => {
+      if (!player) return;
       player.currentTime = Math.min(player.duration || 999999, (player.currentTime || 0) + 10);
     });
 
@@ -589,27 +666,31 @@
         try {
           if (!document.fullscreenElement) await modal.requestFullscreen();
           else await document.exitFullscreen();
-        } catch (e) {}
+        } catch (_) {}
       });
     }
 
-    window.addEventListener("keydown", onEsc);
-    modalBackdrop.addEventListener("click", closeModal, { once: true });
+    // ✅ FIXED: no {once:true} leak — we always remove in cleanup
+    modalBackdrop.addEventListener("click", onBackdrop);
 
     player && player.play().catch(() => {});
+
     modal._cleanup = () => {
-      window.removeEventListener("keydown", onEsc);
-      try { player && player.pause(); } catch (e) {}
+      modalBackdrop.removeEventListener("click", onBackdrop);
+      try {
+        player && player.pause();
+      } catch (_) {}
     };
   }
 
   // ---------------- Plan modal (uses same overlay) ----------------
   function buildPlanModal(plan) {
-    const steps = Array.isArray(plan?.steps) ? plan.steps : [];
+    const stepsArr = Array.isArray(plan?.steps) ? plan.steps : [];
     const title = plan?.title || "Cinematic plan";
     const total = plan?.total_duration || "";
-    const desc  = plan?.description || "";
-    const tags  = [
+    const desc = plan?.description || "";
+
+    const tags = [
       ...(plan?.env || []).map((x) => `env:${x}`),
       ...(plan?.subject || []).map((x) => `sub:${x}`),
       ...(plan?.mood || []).map((x) => `mood:${x}`),
@@ -617,44 +698,53 @@
       ...(plan?.risk || []).map((x) => `risk:${x}`),
     ].slice(0, 8);
 
-    // Minimal plan UI inside existing modal (no extra CSS required, but looks decent)
     modalContent.innerHTML = `
       <div class="smPlan">
         <div class="smPlan__top">
           <div class="smPlan__titleWrap">
             <div class="smPlan__kicker">Cinematic plan</div>
             <div class="smPlan__title">${escapeHtml(title)}</div>
+
             <div class="smPlan__meta">
               ${total ? `<span class="smPlan__chip">${escapeHtml(total)}</span>` : ``}
-              <span class="smPlan__chip">${steps.length} shots</span>
+              <span class="smPlan__chip">${stepsArr.length} shots</span>
               ${desc ? `<span class="smPlan__desc">${escapeHtml(desc)}</span>` : ``}
             </div>
-            ${tags.length ? `<div class="smPlan__tags">${tags.map(t=>`<span class="smPlan__tag">${escapeHtml(t)}</span>`).join("")}</div>` : ``}
+
+            ${
+              tags.length
+                ? `<div class="smPlan__tags">${tags
+                    .map((t) => `<span class="smPlan__tag">${escapeHtml(t)}</span>`)
+                    .join("")}</div>`
+                : ``
+            }
           </div>
 
           <button class="smPlan__close" id="planClose" type="button" aria-label="Close">×</button>
         </div>
 
         <div class="smPlan__body">
-          ${steps.length ? steps.map((s, idx) => `
+          ${
+            stepsArr.length
+              ? stepsArr
+                  .map((s, idx) => `
             <div class="smPlan__step" data-step="${idx}">
               <div class="smPlan__thumb">
-                <img src="${s?.thumb || plan?.thumb_a || ""}" alt="${escapeHtml(s?.title || ("Step " + (idx+1)))}" loading="lazy">
+                <img src="${s?.thumb || plan?.thumb_a || ""}" alt="${escapeHtml(s?.title || ("Step " + (idx + 1)))}" loading="lazy">
                 <div class="smPlan__num">${idx + 1}</div>
               </div>
               <div class="smPlan__info">
-                <div class="smPlan__stepTitle">${escapeHtml(s?.title || ("Shot " + (idx+1)))}</div>
+                <div class="smPlan__stepTitle">${escapeHtml(s?.title || ("Shot " + (idx + 1)))}</div>
                 <div class="smPlan__stepRow">
                   ${s?.duration ? `<span class="smPlan__chip">${escapeHtml(s.duration)}</span>` : ``}
                   ${s?.note ? `<span class="smPlan__note">${escapeHtml(s.note)}</span>` : ``}
                 </div>
               </div>
             </div>
-          `).join("") : `
-            <div style="padding:18px; color: rgba(255,255,255,.75); font-weight:800;">
-              This plan has no steps yet.
-            </div>
-          `}
+          `)
+                  .join("")
+              : `<div style="padding:18px; color: rgba(255,255,255,.75); font-weight:800;">This plan has no steps yet.</div>`
+          }
         </div>
 
         <div class="smPlan__footer">
@@ -664,15 +754,13 @@
       </div>
     `;
 
-    // Inject minimal scoped styles for plan modal (kept inside modal to avoid touching your main CSS)
+    // Minimal scoped styles (live only while modal is open)
     const style = document.createElement("style");
     style.textContent = `
       #sm-library-scope #modal .smPlan{
         position:absolute; inset:0;
-        display:flex;
-        flex-direction:column;
-        padding:18px;
-        gap:14px;
+        display:flex; flex-direction:column;
+        padding:18px; gap:14px;
         color: rgba(255,255,255,.92);
       }
       #sm-library-scope #modal .smPlan__top{
@@ -808,16 +896,17 @@
     if (!plan) return;
 
     if (modal._cleanup) modal._cleanup();
-    modal.classList.add("isPlan");
+    modal._cleanup = null;
 
+    modal.classList.add("isPlan");
     buildPlanModal(plan);
     setModal(true);
 
     const closeA = $("planClose");
     const closeB = $("planCloseBtn");
-    const fsBtn  = $("planFsBtn");
+    const fsBtn = $("planFsBtn");
 
-    const onEsc = (e) => { if (e.key === "Escape") closeModal(); };
+    const onBackdrop = () => closeModal();
 
     if (closeA) closeA.addEventListener("click", closeModal);
     if (closeB) closeB.addEventListener("click", closeModal);
@@ -827,15 +916,14 @@
         try {
           if (!document.fullscreenElement) await modal.requestFullscreen();
           else await document.exitFullscreen();
-        } catch (e) {}
+        } catch (_) {}
       });
     }
 
-    window.addEventListener("keydown", onEsc);
-    modalBackdrop.addEventListener("click", closeModal, { once: true });
+    modalBackdrop.addEventListener("click", onBackdrop);
 
     modal._cleanup = () => {
-      window.removeEventListener("keydown", onEsc);
+      modalBackdrop.removeEventListener("click", onBackdrop);
     };
   }
 
@@ -865,11 +953,8 @@
     }
 
     // Open plan or video
-    if (isPlan(item)) {
-      openPlan(item);
-      return;
-    }
-    openPlayer(idx);
+    if (isPlan(item)) openPlan(item);
+    else openPlayer(idx);
   });
 
   // ---------------- Load JSON ----------------
@@ -878,15 +963,15 @@
       safeText(matchCount, "Loading…");
       const res = await fetch(CDN_INDEX_URL, { cache: "no-store" });
       if (!res.ok) throw new Error("HTTP " + res.status);
+
       const json = await res.json();
       const items = Array.isArray(json) ? json : [];
 
       const plans = items.filter(isPlan);
-      const moves = items.filter(x => !isPlan(x));
+      const moves = items.filter((x) => !isPlan(x));
 
       allItems = [...plans, ...moves];
 
-      // Default: mixed items
       applyFilters();
       renderResults();
     } catch (e) {
