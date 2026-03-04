@@ -9,7 +9,8 @@
   if (window.__SM_LIBRARY_V1_STANDALONE_PLANS_V1__) return;
   window.__SM_LIBRARY_V1_STANDALONE_PLANS_V1__ = true;
 
-  const CDN_INDEX_URL = "https://skymotion-cdn.b-cdn.net/videos_index.json";
+  const CDN_INDEX_URL =
+  "https://skymotion-cdn.b-cdn.net/videos_index.json?v=" + Date.now();
   const API_BASE = String(window.SM_API_BASE || "https://skymotion.onrender.com").replace(/\/$/, "");
 
   const $ = (id) => document.getElementById(id);
