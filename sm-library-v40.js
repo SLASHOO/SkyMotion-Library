@@ -1,24 +1,21 @@
 /* =========================================================
-  SKYMOTION — LIBRARY v1 (STANDALONE) + PLANS (v1) — CLEAN
-  - Plans + Moves mixed (no filtering yet)
+  SKYMOTION — LIBRARY v1 (STANDALONE) + PLANS (FINAL)
+  - Plans + Moves mixed by default (no filtering yet)
   - Uses existing #modal overlay for BOTH video + plan
-  - Fixes:
-    1) Plan card HTML closed properly (no broken DOM)
-    2) No leaking modalBackdrop listeners (cleanup works)
-    3) No duplicate ESC handlers (global only)
+  - Robust image fallback everywhere (NO "one photo breaks all")
+  - No leaking listeners, single ESC handler
 ========================================================= */
 
 (() => {
   "use strict";
-  if (window.__SM_LIBRARY_V1_STANDALONE_PLANS_V1__) return;
-  window.__SM_LIBRARY_V1_STANDALONE_PLANS_V1__ = true;
+  if (window.__SM_LIBRARY_V1_FINAL__) return;
+  window.__SM_LIBRARY_V1_FINAL__ = true;
 
+  const FALLBACK_THUMB = "https://skymotion-cdn.b-cdn.net/thumb.jpg";
   const CDN_INDEX_URL =
     "https://skymotion-cdn.b-cdn.net/videos_index.json?v=" + Date.now();
 
-  const API_BASE = String(window.SM_API_BASE || "https://skymotion.onrender.com")
-    .replace(/\/$/, "");
-
+  const API_BASE = String(window.SM_API_BASE || "https://skymotion.onrender.com").replace(/\/$/, "");
   const $ = (id) => document.getElementById(id);
 
   const scope = $("sm-library-scope");
@@ -42,16 +39,7 @@
   const modalBackdrop = $("modalBackdrop");
   const modalContent = $("modalContent");
 
-  if (
-    !assistant ||
-    !chat ||
-    !grid ||
-    !matchCount ||
-    !resetBtn ||
-    !modal ||
-    !modalBackdrop ||
-    !modalContent
-  ) {
+  if (!assistant || !chat || !grid || !matchCount || !resetBtn || !modal || !modalBackdrop || !modalContent) {
     console.warn("[SM] Missing required elements. Stop.");
     return;
   }
@@ -74,6 +62,33 @@
 
   function isPlan(x) {
     return String(x?.kind || "").toLowerCase() === "plan";
+  }
+
+  function normalizeUrl(u) {
+    const s = String(u ?? "").trim();
+    return s ? s : "";
+  }
+
+  function pickThumb(...candidates) {
+    for (const c of candidates) {
+      const u = normalizeUrl(c);
+      if (u) return u;
+    }
+    return FALLBACK_THUMB;
+  }
+
+  function attachImgFallback(root) {
+    if (!root) return;
+    root.querySelectorAll("img").forEach((img) => {
+      const hasSrc = normalizeUrl(img.getAttribute("src"));
+      if (!hasSrc) img.src = FALLBACK_THUMB;
+
+      img.addEventListener("error", () => {
+        if (img.dataset.smFallbackApplied === "1") return;
+        img.dataset.smFallbackApplied = "1";
+        img.src = FALLBACK_THUMB;
+      });
+    });
   }
 
   // ---------------- Memberstack (cached) ----------------
@@ -116,25 +131,15 @@
     const headers = new Headers(opts.headers || {});
     headers.set("x-ms-id", member.id);
 
-    if (
-      opts.body &&
-      !(opts.body instanceof FormData) &&
-      !headers.has("Content-Type")
-    ) {
+    if (opts.body && !(opts.body instanceof FormData) && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");
     }
 
-    const r = await fetch(API_BASE + path, {
-      method: opts.method || "GET",
-      ...opts,
-      headers,
-    });
+    const r = await fetch(API_BASE + path, { method: opts.method || "GET", ...opts, headers });
 
     const ct = (r.headers.get("content-type") || "").toLowerCase();
     const isJson = ct.includes("application/json");
-    const payload = isJson
-      ? await r.json().catch(() => null)
-      : await r.text().catch(() => null);
+    const payload = isJson ? await r.json().catch(() => null) : await r.text().catch(() => null);
 
     if (!r.ok) {
       const e = new Error("HTTP_" + r.status);
@@ -149,29 +154,17 @@
   let savedCache = [];
 
   function getVideoId(v) {
-    return (
-      v?.id ||
-      v?.slug ||
-      v?.videoUrl ||
-      v?.video_url ||
-      ((v?.title || "") + "|" + (v?.duration || ""))
-    );
+    return v?.id || v?.slug || v?.videoUrl || v?.video_url || ((v?.title || "") + "|" + (v?.duration || ""));
   }
 
   async function hydrateSavedCache() {
     try {
-      const data = await api(`/v1/saved-moves?limit=200&offset=0`, {
-        method: "GET",
-      });
-
+      const data = await api(`/v1/saved-moves?limit=200&offset=0`, { method: "GET" });
       const list = Array.isArray(data)
         ? data
-        : Array.isArray(data?.items)
-        ? data.items
-        : Array.isArray(data?.saved_moves)
-        ? data.saved_moves
-        : Array.isArray(data?.moves)
-        ? data.moves
+        : Array.isArray(data?.items) ? data.items
+        : Array.isArray(data?.saved_moves) ? data.saved_moves
+        : Array.isArray(data?.moves) ? data.moves
         : [];
 
       savedCache = (list || [])
@@ -207,7 +200,7 @@
     const payload = {
       id,
       title: video?.title || "",
-      thumb: video?.thumb || "",
+      thumb: video?.thumb || FALLBACK_THUMB,
       video_url: video?.videoUrl || video?.video_url || "",
       duration: video?.duration || "",
       env: video?.env || [],
@@ -229,7 +222,6 @@
 
   // ---------------- UI locks ----------------
   const locks = { drawer: false, modal: false };
-
   function applyOverflow() {
     const lock = locks.drawer || locks.modal;
     document.documentElement.style.overflow = lock ? "hidden" : "";
@@ -279,9 +271,7 @@
   }
 
   function closeModal() {
-    try {
-      modal._cleanup && modal._cleanup();
-    } catch (_) {}
+    try { modal._cleanup && modal._cleanup(); } catch (_) {}
     modal._cleanup = null;
 
     setModal(false);
@@ -289,7 +279,7 @@
     modal.classList.remove("isPlan");
   }
 
-  // Global ESC priority (ONLY ONE place)
+  // ✅ Single global ESC handler (no duplicates)
   window.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
 
@@ -309,21 +299,17 @@
 
   function setBusy(v) {
     isBusy = v;
-    if (resetBtn) resetBtn.disabled = v;
+    resetBtn.disabled = v;
     if (backBtn) backBtn.disabled = v || history.length === 0;
     chat.querySelectorAll(".opt").forEach((b) => (b.disabled = v));
   }
 
-  function scrollChatBottom() {
-    chat.scrollTop = chat.scrollHeight;
-  }
+  function scrollChatBottom() { chat.scrollTop = chat.scrollHeight; }
 
   function addBotRow() {
     const row = document.createElement("div");
     row.className = "msg msg--bot";
-    row.innerHTML =
-      `<div class="avatar"></div>` +
-      `<div class="bubble"><span class="text"></span><span class="caret"></span></div>`;
+    row.innerHTML = `<div class="avatar"></div><div class="bubble"><span class="text"></span><span class="caret"></span></div>`;
     chat.appendChild(row);
     scrollChatBottom();
     return row;
@@ -345,33 +331,29 @@
 
     await sleep(120);
     if (caretEl) caretEl.remove();
-
     setBusy(false);
   }
 
-  function clearOptions() {
-    chat.querySelectorAll(".options").forEach((el) => el.remove());
-  }
+  function clearOptions() { chat.querySelectorAll(".options").forEach((el) => el.remove()); }
 
   const steps = [
-    { key: "env",     text: "Where are you flying?",            options: ["Open area", "City / Urban", "Forest", "Near objects", "Tight space"] },
-    { key: "risk",    text: "How safe does it feel here?",      options: ["Safe & calm", "Some risks", "No aggressive moves"] },
-    { key: "subject", text: "What are you filming?",            options: ["Person", "Car / Bike", "Building", "Landscape", "Atmosphere"] },
-    { key: "pilot",   text: "How confident are you right now?", options: ["Playing safe", "Normal", "Ready to experiment"] },
-    { key: "mood",    text: "What vibe do you want?",           options: ["Smooth", "Epic", "Dynamic", "Tense", "Wow"] },
+    { key:"env",     text:"Where are you flying?",            options:["Open area","City / Urban","Forest","Near objects","Tight space"] },
+    { key:"risk",    text:"How safe does it feel here?",      options:["Safe & calm","Some risks","No aggressive moves"] },
+    { key:"subject", text:"What are you filming?",            options:["Person","Car / Bike","Building","Landscape","Atmosphere"] },
+    { key:"pilot",   text:"How confident are you right now?", options:["Playing safe","Normal","Ready to experiment"] },
+    { key:"mood",    text:"What vibe do you want?",           options:["Smooth","Epic","Dynamic","Tense","Wow"] },
   ];
 
   const state = {};
   let stepIndex = 0;
 
-  // ---------------- Results: render mixed plans + moves ----------------
+  // ---------------- Data + Results ----------------
   let allItems = [];
   let filtered = [];
   let visibleCount = 12;
 
   function applyFilters() {
-    // TODO: real filtering later
-    filtered = allItems.slice();
+    filtered = allItems.slice(); // TODO: real filtering later
     safeText(matchCount, String(filtered.length));
     visibleCount = 12;
     renderResults();
@@ -404,7 +386,7 @@
 
         if (stepIndex >= steps.length) {
           clearOptions();
-          await addBotTyped("Done. Browse moves and plans in the results.");
+          await addBotTyped("Done. Browse moves and cinematic plans in the results.");
           return;
         }
 
@@ -422,6 +404,7 @@
   if (backBtn) {
     backBtn.addEventListener("click", () => {
       if (isBusy) return;
+
       const last = history.pop();
       backBtn.disabled = history.length === 0;
       if (!last) return;
@@ -463,6 +446,9 @@
     const id = getVideoId(v);
     const saved = isSaved(id);
 
+    const thumb = pickThumb(v?.thumb);
+    const title = escapeHtml(v?.title || "");
+
     const card = document.createElement("div");
     card.className = "card";
     card.dataset.index = String(i);
@@ -474,52 +460,68 @@
         aria-label="${saved ? "Unsave" : "Save"}" data-save-id="${escapeHtml(id)}">
         ${bookmarkSvg()}
       </button>
-      <div class="thumb"><img src="${v.thumb || ""}" alt="${escapeHtml(v.title || "thumb")}" loading="lazy"></div>
+
+      <div class="thumb">
+        <img src="${thumb}" alt="${title || "thumb"}" loading="lazy">
+      </div>
+
       <div class="meta">
-        <div class="title">${escapeHtml(v.title || "")}</div>
-        <span class="badge">${escapeHtml(v.duration || "")}</span>
+        <div class="title">${title}</div>
+        <span class="badge">${escapeHtml(v?.duration || "")}</span>
       </div>
     `;
+
+    attachImgFallback(card);
     return card;
   }
 
-  // ✅ FIXED: proper closing tags (no broken DOM)
   function renderPlanCard(p, i) {
-  const card = document.createElement("div");
-  const stepsArr = Array.isArray(p?.steps) ? p.steps : [];
+    const stepsArr = Array.isArray(p?.steps) ? p.steps : [];
+    const title = escapeHtml(p?.title || "Cinematic plan");
 
-  const thumb = String(
-    p?.thumb || p?.thumb_a || p?.thumb_b || stepsArr?.[0]?.thumb || ""
-  ).trim();
+    const imgA = pickThumb(p?.thumb_a, stepsArr?.[0]?.thumb, p?.thumb, FALLBACK_THUMB);
+    const imgB = pickThumb(p?.thumb_b, stepsArr?.[1]?.thumb, p?.thumb, FALLBACK_THUMB);
 
-  const cover = thumb || "https://skymotion-cdn.b-cdn.net/thumb.jpg";
+    const shotsCount = Number(p?.shots_count) || stepsArr.length || 0;
+    const total = escapeHtml(p?.total_duration || "");
+    const desc = escapeHtml(p?.description || "");
 
-  card.className = "cardPlan";
-  card.dataset.index = String(i);
-  card.dataset.kind = "plan";
+    const card = document.createElement("div");
+    card.className = "cardPlan";
+    card.dataset.index = String(i);
+    card.dataset.kind = "plan";
+    card.dataset.itemId = String(p?.id || "");
 
-  card.innerHTML = `
-    <div class="planThumbs">
-      <div class="planShot planShot--a">
-        <img src="${cover}" alt="${escapeHtml(p?.title || "Plan")}" loading="lazy">
-      </div>
-      <div class="planShot planShot--b">
-        <img src="${cover}" alt="${escapeHtml(p?.title || "Plan")}" loading="lazy">
-      </div>
-    </div>
-
-    <div style="position:absolute; inset:0; display:flex; align-items:flex-end; padding:14px; z-index:2;">
-      <div style="background:rgba(0,0,0,.6); border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:12px; width:100%;">
-        <div style="font-weight:900;">${escapeHtml(p?.title || "Plan")}</div>
-        <div style="opacity:.7; font-weight:800; font-size:12px;">
-          ${stepsArr.length ? `${stepsArr.length} shots` : "Plan"}${p?.total_duration ? ` · ${escapeHtml(p.total_duration)}` : ""}
+    card.innerHTML = `
+      <div class="planThumbs">
+        <div class="planShot planShot--a">
+          <img src="${imgA}" alt="${title} shot A" loading="lazy">
+        </div>
+        <div class="planShot planShot--b">
+          <img src="${imgB}" alt="${title} shot B" loading="lazy">
         </div>
       </div>
-    </div>
-  `;
 
-  return card;
-}
+      <div class="planTop">
+        <div class="planPills">
+          <span class="pill pill--plan"><span class="pillDot"></span>Plan</span>
+          ${total ? `<span class="pill">${total}</span>` : ``}
+          <span class="pill">${shotsCount ? `${shotsCount} shots` : `Plan`}</span>
+        </div>
+      </div>
+
+      <div class="planMeta">
+        <h3 class="planName">${title}</h3>
+        <div class="planStats">
+          ${desc ? `<span>${desc}</span>` : ``}
+        </div>
+      </div>
+    `;
+
+    attachImgFallback(card);
+    return card;
+  }
+
   function renderResults() {
     grid.innerHTML = "";
     const slice = filtered.slice(0, visibleCount);
@@ -567,15 +569,16 @@
 
   function buildVideoPlayer(video) {
     const saved = isSaved(getVideoId(video));
+    const src = normalizeUrl(video?.videoUrl || video?.video_url);
 
     modalContent.innerHTML = `
       <div class="player">
         <video id="playerVideo" controls playsinline preload="metadata">
-          <source src="${video.videoUrl}" type="video/mp4">
+          <source src="${escapeHtml(src)}" type="video/mp4">
         </video>
 
         <div class="player__top">
-          <div class="player__title">${escapeHtml(video.title || "")}</div>
+          <div class="player__title">${escapeHtml(video?.title || "")}</div>
           <button class="player__close" id="playerClose" type="button" aria-label="Close">×</button>
         </div>
 
@@ -597,12 +600,13 @@
     const item = filtered[index];
     if (!item || isPlan(item)) return;
 
-    if (modal._cleanup) modal._cleanup();
+    try { modal._cleanup && modal._cleanup(); } catch (_) {}
     modal._cleanup = null;
 
     currentIndex = index;
     const video = filtered[currentIndex];
-    if (!video || !video.videoUrl) return;
+    const src = normalizeUrl(video?.videoUrl || video?.video_url);
+    if (!src) return;
 
     buildVideoPlayer(video);
     setModal(true);
@@ -617,15 +621,10 @@
     const saveMoveBtn = $("saveMoveBtn");
 
     const goPrev = () => {
-      for (let i = currentIndex - 1; i >= 0; i--) {
-        if (!isPlan(filtered[i])) return openPlayer(i);
-      }
+      for (let i = currentIndex - 1; i >= 0; i--) if (!isPlan(filtered[i])) return openPlayer(i);
     };
-
     const goNext = () => {
-      for (let i = currentIndex + 1; i < filtered.length; i++) {
-        if (!isPlan(filtered[i])) return openPlayer(i);
-      }
+      for (let i = currentIndex + 1; i < filtered.length; i++) if (!isPlan(filtered[i])) return openPlayer(i);
     };
 
     const onBackdrop = () => closeModal();
@@ -661,16 +660,13 @@
       });
     }
 
-    // ✅ FIXED: no {once:true} leak — we always remove in cleanup
     modalBackdrop.addEventListener("click", onBackdrop);
 
     player && player.play().catch(() => {});
 
     modal._cleanup = () => {
       modalBackdrop.removeEventListener("click", onBackdrop);
-      try {
-        player && player.pause();
-      } catch (_) {}
+      try { player && player.pause(); } catch (_) {}
     };
   }
 
@@ -680,14 +676,6 @@
     const title = plan?.title || "Cinematic plan";
     const total = plan?.total_duration || "";
     const desc = plan?.description || "";
-
-    const tags = [
-      ...(plan?.env || []).map((x) => `env:${x}`),
-      ...(plan?.subject || []).map((x) => `sub:${x}`),
-      ...(plan?.mood || []).map((x) => `mood:${x}`),
-      ...(plan?.pilot || []).map((x) => `pilot:${x}`),
-      ...(plan?.risk || []).map((x) => `risk:${x}`),
-    ].slice(0, 8);
 
     modalContent.innerHTML = `
       <div class="smPlan">
@@ -701,14 +689,6 @@
               <span class="smPlan__chip">${stepsArr.length} shots</span>
               ${desc ? `<span class="smPlan__desc">${escapeHtml(desc)}</span>` : ``}
             </div>
-
-            ${
-              tags.length
-                ? `<div class="smPlan__tags">${tags
-                    .map((t) => `<span class="smPlan__tag">${escapeHtml(t)}</span>`)
-                    .join("")}</div>`
-                : ``
-            }
           </div>
 
           <button class="smPlan__close" id="planClose" type="button" aria-label="Close">×</button>
@@ -717,23 +697,24 @@
         <div class="smPlan__body">
           ${
             stepsArr.length
-              ? stepsArr
-                  .map((s, idx) => `
-            <div class="smPlan__step" data-step="${idx}">
-              <div class="smPlan__thumb">
-                <img src="${s?.thumb || plan?.thumb_a || ""}" alt="${escapeHtml(s?.title || ("Step " + (idx + 1)))}" loading="lazy">
-                <div class="smPlan__num">${idx + 1}</div>
-              </div>
-              <div class="smPlan__info">
-                <div class="smPlan__stepTitle">${escapeHtml(s?.title || ("Shot " + (idx + 1)))}</div>
-                <div class="smPlan__stepRow">
-                  ${s?.duration ? `<span class="smPlan__chip">${escapeHtml(s.duration)}</span>` : ``}
-                  ${s?.note ? `<span class="smPlan__note">${escapeHtml(s.note)}</span>` : ``}
-                </div>
-              </div>
-            </div>
-          `)
-                  .join("")
+              ? stepsArr.map((s, idx) => {
+                  const thumb = pickThumb(s?.thumb, plan?.thumb_a, plan?.thumb_b, plan?.thumb, FALLBACK_THUMB);
+                  return `
+                    <div class="smPlan__step" data-step="${idx}">
+                      <div class="smPlan__thumb">
+                        <img src="${thumb}" alt="${escapeHtml(s?.title || ("Step " + (idx + 1)))}" loading="lazy">
+                        <div class="smPlan__num">${idx + 1}</div>
+                      </div>
+                      <div class="smPlan__info">
+                        <div class="smPlan__stepTitle">${escapeHtml(s?.title || ("Shot " + (idx + 1)))}</div>
+                        <div class="smPlan__stepRow">
+                          ${s?.duration ? `<span class="smPlan__chip">${escapeHtml(s.duration)}</span>` : ``}
+                          ${s?.note ? `<span class="smPlan__note">${escapeHtml(s.note)}</span>` : ``}
+                        </div>
+                      </div>
+                    </div>
+                  `;
+                }).join("")
               : `<div style="padding:18px; color: rgba(255,255,255,.75); font-weight:800;">This plan has no steps yet.</div>`
           }
         </div>
@@ -745,148 +726,42 @@
       </div>
     `;
 
-    // Minimal scoped styles (live only while modal is open)
+    // minimal scoped styles (modal-only)
     const style = document.createElement("style");
     style.textContent = `
-      #sm-library-scope #modal .smPlan{
-        position:absolute; inset:0;
-        display:flex; flex-direction:column;
-        padding:18px; gap:14px;
-        color: rgba(255,255,255,.92);
-      }
-      #sm-library-scope #modal .smPlan__top{
-        display:flex; align-items:flex-start; justify-content:space-between;
-        gap:12px;
-      }
-      #sm-library-scope #modal .smPlan__kicker{
-        font-size:12px; font-weight:950;
-        color: rgba(255,255,255,.60);
-        letter-spacing:.2px;
-        margin-bottom:6px;
-      }
-      #sm-library-scope #modal .smPlan__title{
-        font-size:18px; font-weight:950;
-        text-shadow:0 10px 30px rgba(0,0,0,.55);
-        margin-bottom:8px;
-      }
-      #sm-library-scope #modal .smPlan__meta{
-        display:flex; flex-wrap:wrap; gap:8px;
-        align-items:center;
-        margin-bottom:10px;
-      }
-      #sm-library-scope #modal .smPlan__chip{
-        font-size:12px; font-weight:900;
-        padding:6px 10px;
-        border-radius:999px;
-        background: rgba(0,0,0,.45);
-        border:1px solid rgba(255,255,255,.16);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-      }
-      #sm-library-scope #modal .smPlan__desc{
-        font-size:12px; font-weight:850;
-        color: rgba(255,255,255,.70);
-      }
-      #sm-library-scope #modal .smPlan__tags{
-        display:flex; flex-wrap:wrap; gap:8px;
-      }
-      #sm-library-scope #modal .smPlan__tag{
-        font-size:11px; font-weight:900;
-        padding:5px 9px;
-        border-radius:999px;
-        background: rgba(120,59,226,.14);
-        border:1px solid rgba(120,59,226,.30);
-        color: rgba(255,255,255,.85);
-      }
-      #sm-library-scope #modal .smPlan__close{
-        width:44px; height:44px;
-        border-radius:14px;
-        border:1px solid rgba(255,255,255,0.14);
-        background: rgba(0,0,0,0.35);
-        color:#fff;
-        cursor:pointer;
-        display:grid;
-        place-items:center;
-        font-size:20px;
-        transition: transform .12s ease, border-color .12s ease, background .12s ease;
-        flex:0 0 auto;
-      }
-      #sm-library-scope #modal .smPlan__close:hover{
-        transform: translateY(-1px);
-        border-color: rgba(120,59,226,.40);
-        background: rgba(120,59,226,.12);
-      }
-      #sm-library-scope #modal .smPlan__body{
-        flex:1;
-        overflow:auto;
-        padding-right:4px;
-        display:flex;
-        flex-direction:column;
-        gap:12px;
-      }
-      #sm-library-scope #modal .smPlan__step{
-        display:grid;
-        grid-template-columns: 110px 1fr;
-        gap:12px;
-        padding:10px;
-        border-radius:16px;
-        border:1px solid rgba(255,255,255,.10);
-        background: rgba(0,0,0,.25);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-      }
-      #sm-library-scope #modal .smPlan__thumb{
-        position:relative;
-        border-radius:14px;
-        overflow:hidden;
-        background:#000;
-        border:1px solid rgba(255,255,255,.10);
-        height:78px;
-      }
-      #sm-library-scope #modal .smPlan__thumb img{
-        width:100%; height:100%; object-fit:cover; display:block;
-      }
-      #sm-library-scope #modal .smPlan__num{
-        position:absolute; left:8px; top:8px;
-        width:26px; height:26px;
-        border-radius:999px;
-        display:grid; place-items:center;
-        font-weight:950;
-        font-size:12px;
-        background: rgba(0,0,0,.55);
-        border:1px solid rgba(255,255,255,.18);
-      }
-      #sm-library-scope #modal .smPlan__stepTitle{
-        font-size:14px; font-weight:950;
-        margin:2px 0 6px;
-      }
-      #sm-library-scope #modal .smPlan__stepRow{
-        display:flex; flex-wrap:wrap; gap:8px;
-        align-items:center;
-      }
-      #sm-library-scope #modal .smPlan__note{
-        font-size:12px; font-weight:850;
-        color: rgba(255,255,255,.72);
-      }
-      #sm-library-scope #modal .smPlan__footer{
-        display:flex;
-        gap:10px;
-        justify-content:flex-end;
-        flex-wrap:wrap;
-      }
+      #sm-library-scope #modal .smPlan{ position:absolute; inset:0; display:flex; flex-direction:column; padding:18px; gap:14px; color: rgba(255,255,255,.92); }
+      #sm-library-scope #modal .smPlan__top{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+      #sm-library-scope #modal .smPlan__kicker{ font-size:12px; font-weight:950; color: rgba(255,255,255,.60); letter-spacing:.2px; margin-bottom:6px; }
+      #sm-library-scope #modal .smPlan__title{ font-size:18px; font-weight:950; text-shadow:0 10px 30px rgba(0,0,0,.55); margin-bottom:8px; }
+      #sm-library-scope #modal .smPlan__meta{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
+      #sm-library-scope #modal .smPlan__chip{ font-size:12px; font-weight:900; padding:6px 10px; border-radius:999px; background: rgba(0,0,0,.45); border:1px solid rgba(255,255,255,.16); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+      #sm-library-scope #modal .smPlan__desc{ font-size:12px; font-weight:850; color: rgba(255,255,255,.70); }
+      #sm-library-scope #modal .smPlan__close{ width:44px; height:44px; border-radius:14px; border:1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.35); color:#fff; cursor:pointer; display:grid; place-items:center; font-size:20px; transition: transform .12s ease, border-color .12s ease, background .12s ease; flex:0 0 auto; }
+      #sm-library-scope #modal .smPlan__close:hover{ transform: translateY(-1px); border-color: rgba(120,59,226,.40); background: rgba(120,59,226,.12); }
+      #sm-library-scope #modal .smPlan__body{ flex:1; overflow:auto; padding-right:4px; display:flex; flex-direction:column; gap:12px; }
+      #sm-library-scope #modal .smPlan__step{ display:grid; grid-template-columns:110px 1fr; gap:12px; padding:10px; border-radius:16px; border:1px solid rgba(255,255,255,.10); background: rgba(0,0,0,.25); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+      #sm-library-scope #modal .smPlan__thumb{ position:relative; border-radius:14px; overflow:hidden; background:#000; border:1px solid rgba(255,255,255,.10); height:78px; }
+      #sm-library-scope #modal .smPlan__thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
+      #sm-library-scope #modal .smPlan__num{ position:absolute; left:8px; top:8px; width:26px; height:26px; border-radius:999px; display:grid; place-items:center; font-weight:950; font-size:12px; background: rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.18); }
+      #sm-library-scope #modal .smPlan__stepTitle{ font-size:14px; font-weight:950; margin:2px 0 6px; }
+      #sm-library-scope #modal .smPlan__stepRow{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+      #sm-library-scope #modal .smPlan__note{ font-size:12px; font-weight:850; color: rgba(255,255,255,.72); }
+      #sm-library-scope #modal .smPlan__footer{ display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap; }
       @media (max-width: 900px){
         #sm-library-scope #modal .smPlan{ padding:14px; }
-        #sm-library-scope #modal .smPlan__step{ grid-template-columns: 1fr; }
+        #sm-library-scope #modal .smPlan__step{ grid-template-columns:1fr; }
         #sm-library-scope #modal .smPlan__thumb{ height:140px; }
       }
     `;
     modalContent.appendChild(style);
+
+    attachImgFallback(modalContent);
   }
 
   function openPlan(plan) {
     if (!plan) return;
 
-    if (modal._cleanup) modal._cleanup();
+    try { modal._cleanup && modal._cleanup(); } catch (_) {}
     modal._cleanup = null;
 
     modal.classList.add("isPlan");
@@ -896,7 +771,6 @@
     const closeA = $("planClose");
     const closeB = $("planCloseBtn");
     const fsBtn = $("planFsBtn");
-
     const onBackdrop = () => closeModal();
 
     if (closeA) closeA.addEventListener("click", closeModal);
@@ -929,13 +803,11 @@
     const item = filtered[idx];
     if (!item) return;
 
-    // Save click only for MOVE cards
     const saveBtn = e.target.closest(".sm-save");
     if (saveBtn) {
       e.preventDefault();
       e.stopPropagation();
-
-      if (isPlan(item)) return; // no save for plans
+      if (isPlan(item)) return;
 
       const nowSaved = await toggleSaved(item);
       saveBtn.classList.toggle("isSaved", nowSaved);
@@ -943,7 +815,6 @@
       return;
     }
 
-    // Open plan or video
     if (isPlan(item)) openPlan(item);
     else openPlayer(idx);
   });
@@ -962,7 +833,6 @@
       const moves = items.filter((x) => !isPlan(x));
 
       allItems = [...plans, ...moves];
-
       applyFilters();
       renderResults();
     } catch (e) {
@@ -978,7 +848,6 @@
   (async () => {
     if (backBtn) backBtn.disabled = true;
 
-    // Member optional: to show saved states
     await getMember(12000).catch(() => null);
     await hydrateSavedCache();
 
