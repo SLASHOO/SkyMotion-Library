@@ -882,7 +882,12 @@
       const res = await fetch(CDN_INDEX_URL, { cache: "no-store" });
       if (!res.ok) throw new Error("HTTP " + res.status);
       const json = await res.json();
-      allItems = Array.isArray(json) ? json : [];
+      const items = Array.isArray(json) ? json : [];
+
+      const plans = items.filter(isPlan);
+      const moves = items.filter(x => !isPlan(x));
+
+      allItems = [...plans, ...moves];
 
       // Default: mixed items
       applyFilters();
