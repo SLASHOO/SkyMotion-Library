@@ -1,7 +1,7 @@
 (() => {
   "use strict";
-  if (window.__SM_LIBRARY_V1_CLEAN_V41__) return;
-  window.__SM_LIBRARY_V1_CLEAN_V41__ = true;
+  if (window.__SM_LIBRARY_V1_STANDALONE_V1__) return;
+  window.__SM_LIBRARY_V1_STANDALONE_V1__ = true;
 
   const CDN_INDEX_URL = "https://skymotion-cdn.b-cdn.net/videos_index.json";
   const API_BASE = String(window.SM_API_BASE || "https://skymotion.onrender.com").replace(/\/$/, "");
@@ -11,28 +11,14 @@
   if (!scope) return;
 
   // ---------------- DOM ----------------
-  const pill = $("sm-sessionpill");
-  const smBackBtn = $("smBackBtn");
-  const smToggleBtn = $("smToggleBtn");
-  const smCamReady = $("smCamReady");
-  const smISO = $("smISO");
-  const smND = $("smND");
-  const smPicked = $("smPicked");
-  const smSavedCount = $("smSavedCount");
-
   const assistant = scope.querySelector(".assistant");
   const openAssistantBtn = $("openAssistantBtn");
   const closeAssistantBtn = $("closeAssistantBtn");
   const assistantBackdropEl = $("assistantBackdrop");
 
-  const doneBtn = $("doneBtn");
-  const endModal = $("smEndModal");
-  const endModalBackdrop = $("smEndModalBackdrop");
-  const endCancelBtn = $("smEndCancelBtn");
-  const endConfirmBtn = $("smEndConfirmBtn");
-
   const chat = $("chat");
   const grid = $("resultsGrid");
+  const resultsHead = $("resultsHead"); // optional
   const matchCount = $("matchCount");
   const resetBtn = $("resetBtn");
   const backBtn = $("backBtn");
@@ -60,52 +46,6 @@
       .replaceAll("'", "&#039;");
   }
   function safeText(el, t) { if (el) el.textContent = String(t ?? ""); }
-
-  // ---------------- Session mode ----------------
-  function isSessionMode() {
-    const q = new URLSearchParams(location.search);
-    if (q.get("mode") === "session") return true;
-    return document.documentElement.classList.contains("sm-session");
-  }
-  const SESSION_MODE = isSessionMode();
-
-  // cleanup ?mode=free
-  (() => {
-    const u = new URL(location.href);
-    if (u.searchParams.get("mode") === "free") {
-      u.searchParams.delete("mode");
-      history.replaceState(null, "", u.pathname + (u.searchParams.toString() ? "?" + u.searchParams.toString() : ""));
-    }
-  })();
-
-  scope.setAttribute("data-session", SESSION_MODE ? "1" : "0");
-
-  function getSess() {
-    return new URLSearchParams(location.search).get("sess");
-  }
-
-  function buildUrl(path) {
-    if (!SESSION_MODE) return path;
-    const u = new URL(path, location.origin);
-    u.searchParams.set("mode", "session");
-    const sess = getSess();
-    if (sess) u.searchParams.set("sess", sess);
-    return u.pathname + "?" + u.searchParams.toString();
-  }
-
-  const URLS = {
-    map:     () => buildUrl("/map"),
-    camera:  () => buildUrl("/assistant"),
-    library: () => buildUrl("/libraryy"),
-    profile: () => buildUrl("/profile"),
-  };
-  const go = (url) => { window.location.href = url; };
-
-  // remove session-only UI in free mode
-  if (!SESSION_MODE) {
-    if (pill) pill.remove();
-    if (endModal) endModal.remove();
-  }
 
   // ---------------- Memberstack (cached) ----------------
   let _memberCache = null;
@@ -165,113 +105,9 @@
     return payload;
   }
 
-  // ---------------- Session cache ----------------
-  const sessionCache = { value: null, at: 0 };
-  async function fetchSession({ force = false } = {}) {
-    const sess = getSess();
-    if (!SESSION_MODE || !sess) return null;
-
-    const now = Date.now();
-    if (!force && sessionCache.value && (now - sessionCache.at) < 4000) return sessionCache.value;
-
-    try {
-      const data = await api(`/v1/sessions/${encodeURIComponent(sess)}`, { method: "GET" });
-      const s = data?.session || data || null;
-      sessionCache.value = s;
-      sessionCache.at = Date.now();
-      return s;
-    } catch (e) {
-      console.warn("[SM] fetchSession failed", e?.status, e?.payload || e);
-      return sessionCache.value || null;
-    }
-  }
-
-  // ---------------- Patch queue (DEEP merge for JSON fields) ----------------
-  let patchTimer = null;
-  let patchPending = null;
-  let patchInFlight = false;
-
-  function isPlainObject(x) {
-    return !!x && typeof x === "object" && !Array.isArray(x);
-  }
-  function mergeClean(obj) {
-    const out = {};
-    Object.keys(obj || {}).forEach((k) => {
-      if (obj[k] !== undefined) out[k] = obj[k];
-    });
-    return out;
-  }
-
-  function deepMergeJsonFields(prev, next) {
-    const out = { ...(prev || {}) };
-
-    Object.keys(next || {}).forEach((k) => {
-      const v = next[k];
-
-      // deep merge ONLY for known JSON fields that we patch partially
-      if ((k === "library_results_json" || k === "assistant_settings_json") && isPlainObject(v) && isPlainObject(out[k])) {
-        out[k] = { ...out[k], ...v };
-        return;
-      }
-
-      out[k] = v;
-    });
-
-    return out;
-  }
-
-  function queuePatchSession(patch) {
-    if (!SESSION_MODE || !getSess()) return;
-
-    const cleaned = mergeClean(patch || {});
-    patchPending = deepMergeJsonFields(patchPending, cleaned);
-
-    if (patchTimer) clearTimeout(patchTimer);
-    patchTimer = setTimeout(() => flushPatchNow({ keepalive: false }), 250);
-  }
-
-  function queuePatchLibrary(partial) {
-    if (!partial || typeof partial !== "object") return;
-    queuePatchSession({ library_results_json: partial });
-  }
-
-  async function flushPatchNow({ keepalive = false } = {}) {
-    if (!SESSION_MODE || !getSess()) return;
-    if (patchInFlight) return;
-    if (!patchPending) return;
-
-    const sess = getSess();
-    const body = patchPending;
-    patchPending = null;
-    if (patchTimer) { clearTimeout(patchTimer); patchTimer = null; }
-
-    patchInFlight = true;
-    try {
-      await api(`/v1/sessions/${encodeURIComponent(sess)}`, {
-        method: "PATCH",
-        body: JSON.stringify(body),
-        keepalive: !!keepalive,
-      });
-      await fetchSession({ force: true });
-    } catch (e) {
-      // якщо фейл — повертаємо назад, щоб не загубити
-      patchPending = deepMergeJsonFields(body, patchPending);
-      console.warn("[SM] PATCH session failed", e?.status, e?.payload || e);
-    } finally {
-      patchInFlight = false;
-    }
-  }
-
-  // Flush on leave/hidden so filtered_count точно долітає
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") flushPatchNow({ keepalive: true });
-  });
-  window.addEventListener("pagehide", () => flushPatchNow({ keepalive: true }));
-  window.addEventListener("beforeunload", () => flushPatchNow({ keepalive: true }));
-
   // ---------------- Saved moves (API only) ----------------
   let savedCache = [];
-  function getVideoId(v) {
+  function getItemId(v) {
     return v?.id || v?.slug || v?.videoUrl || v?.video_url || ((v?.title || "") + "|" + (v?.duration || ""));
   }
 
@@ -300,84 +136,46 @@
     return Array.isArray(savedCache) && savedCache.some((x) => String(x?.id) === String(id));
   }
 
-  async function toggleSaved(video) {
-    const id = getVideoId(video);
+  async function toggleSaved(item) {
+    const id = getItemId(item);
 
     if (isSaved(id)) {
-      try {
-        await api(`/v1/saved-moves/${encodeURIComponent(id)}`, { method: "DELETE" });
-      } catch (e) {
-        console.warn("[SM] unsave failed", e?.status, e?.payload || e);
-      }
+      try { await api(`/v1/saved-moves/${encodeURIComponent(id)}`, { method: "DELETE" }); }
+      catch (e) { console.warn("[SM] unsave failed", e?.status, e?.payload || e); }
+
       await hydrateSavedCache();
       return false;
     }
 
     const payload = {
       id,
-      title: video?.title || "",
-      thumb: video?.thumb || "",
-      video_url: video?.videoUrl || video?.video_url || "",
-      duration: video?.duration || "",
-      env: video?.env || [],
-      risk: video?.risk || [],
-      subject: video?.subject || [],
-      pilot: video?.pilot || [],
-      mood: video?.mood || [],
+      title: item?.title || item?.name || "",
+      thumb: item?.thumb || item?.cover || item?.thumb_a || "",
+      video_url: item?.videoUrl || item?.video_url || "",
+      duration: item?.duration || item?.total_duration || "",
+      // tags (moves keep these; plans can ignore)
+      env: item?.env || [],
+      risk: item?.risk || [],
+      subject: item?.subject || [],
+      pilot: item?.pilot || [],
+      mood: item?.mood || [],
+      kind: item?.kind || item?.type || (isPlanItem(item) ? "plan" : "move"),
     };
 
-    try {
-      await api(`/v1/saved-moves`, { method: "POST", body: JSON.stringify(payload) });
-    } catch (e) {
-      console.warn("[SM] save failed", e?.status, e?.payload || e);
-    }
+    try { await api(`/v1/saved-moves`, { method: "POST", body: JSON.stringify(payload) }); }
+    catch (e) { console.warn("[SM] save failed", e?.status, e?.payload || e); }
 
     await hydrateSavedCache();
     return true;
   }
 
   // ---------------- UI locks ----------------
-  const locks = { drawer: false, modal: false, endmodal: false };
+  const locks = { drawer: false, modal: false };
   function applyOverflow() {
-    const lock = locks.drawer || locks.modal || locks.endmodal;
+    const lock = locks.drawer || locks.modal;
     document.documentElement.style.overflow = lock ? "hidden" : "";
     document.body.style.overflow = lock ? "hidden" : "";
   }
-
-  // ---------------- Session pill (API only) ----------------
-  async function refreshPill() {
-    if (!pill) return;
-    if (!SESSION_MODE) { pill.style.display = "none"; return; }
-
-    pill.style.display = "block";
-    safeText(smSavedCount, String(savedCache.length));
-
-    const s = await fetchSession();
-    if (!s) {
-      safeText(smCamReady, "—");
-      safeText(smISO, "—");
-      safeText(smND, "—");
-      safeText(smPicked, "None");
-      return;
-    }
-
-    const assistantJson = s?.assistant_settings_json || null;
-    const lib = s?.library_results_json || null;
-
-    safeText(smCamReady, assistantJson ? "Ready" : "Skipped");
-
-    const photo =
-      assistantJson?.recommended_settings?.photo_settings ||
-      assistantJson?.photo_settings ||
-      assistantJson?.photo || {};
-
-    safeText(smISO, photo?.["ISO"] || photo?.iso || "—");
-    safeText(smND,  photo?.["ND Filter"] || photo?.nd_filter || "—");
-    safeText(smPicked, lib?.selected_video?.title || "None");
-  }
-
-  if (smToggleBtn && pill) smToggleBtn.addEventListener("click", () => pill.classList.toggle("expanded"));
-  if (smBackBtn) smBackBtn.addEventListener("click", () => { if (SESSION_MODE) go(URLS.camera()); });
 
   // ---------------- Drawer open/close ----------------
   function isDrawerMode() { return window.matchMedia("(max-width: 900px)").matches; }
@@ -410,48 +208,10 @@
     }
   });
 
-  // ---------------- End session modal ----------------
-  function setEndModal(open) {
-    if (!endModal) return;
-    endModal.setAttribute("aria-hidden", open ? "false" : "true");
-    locks.endmodal = !!open;
-    applyOverflow();
-  }
-
-  if (endCancelBtn) endCancelBtn.addEventListener("click", () => setEndModal(false));
-  if (endModalBackdrop) endModalBackdrop.addEventListener("click", () => setEndModal(false));
-
-  async function endSessionAndGoProfile(filteredCount) {
-    const sess = getSess();
-    if (!SESSION_MODE || !sess) { go("/profile"); return; }
-
-    // гарантуємо що filtered_count долетить
-    if (Number.isFinite(filteredCount)) queuePatchLibrary({ filtered_count: clamp(filteredCount, 0, 999999) });
-    await flushPatchNow({ keepalive: true });
-
-    try { await api(`/v1/sessions/${encodeURIComponent(sess)}/done`, { method: "POST", keepalive: true }); }
-    catch (e) { console.warn("[SM] done failed", e?.status, e?.payload || e); }
-
-    go(URLS.profile());
-  }
-
-  if (doneBtn) {
-    if (!SESSION_MODE) doneBtn.style.display = "none";
-    else doneBtn.addEventListener("click", () => setEndModal(true));
-  }
-
-  if (endConfirmBtn && SESSION_MODE) {
-    endConfirmBtn.addEventListener("click", async () => {
-      setEndModal(false);
-      await endSessionAndGoProfile(filtered.length);
-    });
-  }
-
   // ESC priority
   window.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    if (endModal && endModal.getAttribute("aria-hidden") === "false") { setEndModal(false); return; }
-    if (modal && modal.getAttribute("aria-hidden") === "false") { closePlayer(); return; }
+    if (modal && modal.getAttribute("aria-hidden") === "false") { closeModal(); return; }
     if (assistant && assistant.classList.contains("active")) { closeAssistant(); return; }
   });
 
@@ -494,7 +254,7 @@
 
   function clearOptions() { chat.querySelectorAll(".options").forEach((el) => el.remove()); }
 
-  let allVideos = [];
+  let allItems = [];
   let filtered = [];
   let visibleCount = 12;
 
@@ -520,10 +280,15 @@
     return a.includes(tag);
   }
 
+  function isPlanItem(v) {
+    const k = String(v?.kind || v?.type || "").toLowerCase();
+    return v?.is_plan === true || k === "plan" || k === "sequence" || k === "cinematic_plan";
+  }
+
   const state = {};
   let stepIndex = 0;
 
-  function filterVideos(videos) {
+  function filterItems(items) {
     const picked = {
       env: mapTags.env[state.env],
       subject: mapTags.subject[state.subject],
@@ -532,7 +297,14 @@
       mood: mapTags.mood[state.mood],
     };
 
-    return videos.filter((v) => {
+    // rule: BEFORE any filtering => show only moves.
+    // AFTER user has answered at least 1 step => allow plans in results too.
+    const allowPlans = stepIndex > 0;
+
+    return items.filter((v) => {
+      const plan = isPlanItem(v);
+      if (plan && !allowPlans) return false;
+
       if (picked.env && !hasTag(v.env, picked.env)) return false;
       if (picked.subject && !hasTag(v.subject, picked.subject)) return false;
       if (picked.risk && !hasTag(v.risk, picked.risk)) return false;
@@ -547,13 +319,10 @@
   }
 
   function applyFilters() {
-    filtered = filterVideos(allVideos);
+    filtered = filterItems(allItems);
     safeText(matchCount, String(filtered.length));
     visibleCount = 12;
     renderResults();
-
-    // ВАЖЛИВО: це тепер не затирається іншими патчами
-    if (SESSION_MODE) queuePatchLibrary({ filtered_count: filtered.length });
   }
 
   function bookmarkSvg() {
@@ -562,48 +331,129 @@
     </svg>`;
   }
 
+  function renderMoveCard(v, i) {
+    const id = getItemId(v);
+    const saved = isSaved(id);
+
+    const card = document.createElement("div");
+    card.className = "card";
+    card.dataset.index = String(i);
+    card.dataset.itemKind = "move";
+    card.dataset.itemId = String(id);
+
+    card.innerHTML = `
+      <button class="sm-save ${saved ? "isSaved" : ""}" type="button"
+        aria-label="${saved ? "Unsave" : "Save"}" data-save-id="${escapeHtml(id)}">
+        ${bookmarkSvg()}
+      </button>
+      <div class="thumb"><img src="${v.thumb || ""}" alt="${escapeHtml(v.title || "thumb")}" loading="lazy"></div>
+      <div class="meta">
+        <div class="title">${escapeHtml(v.title || "")}</div>
+        <span class="badge">${escapeHtml(v.duration || "")}</span>
+      </div>
+    `;
+    return card;
+  }
+
+  function pickPlanThumbs(plan) {
+    // accepted shapes:
+    // plan.thumbs: [a,b]
+    // plan.shots: [{thumb},{thumb}]
+    // plan.thumb_a/thumb_b
+    const t = Array.isArray(plan?.thumbs) ? plan.thumbs : null;
+    if (t && t[0] && t[1]) return [t[0], t[1]];
+
+    const shots = Array.isArray(plan?.shots) ? plan.shots : [];
+    if (shots[0]?.thumb && shots[1]?.thumb) return [shots[0].thumb, shots[1].thumb];
+
+    const a = plan?.thumb_a || plan?.thumbA || plan?.thumb || plan?.cover || "";
+    const b = plan?.thumb_b || plan?.thumbB || plan?.thumb2 || a || "";
+    return [a, b];
+  }
+
+  function renderPlanCard(plan, i) {
+    const id = getItemId(plan);
+    const saved = isSaved(id);
+    const [a, b] = pickPlanThumbs(plan);
+
+    const shotsCount =
+      Number(plan?.shots_count) ||
+      (Array.isArray(plan?.shots) ? plan.shots.length : 0) ||
+      Number(plan?.steps_count) || 0;
+
+    const totalDur = plan?.total_duration || plan?.duration_total || plan?.duration || "";
+    const level = plan?.level || plan?.difficulty || plan?.skill || "";
+
+    const card = document.createElement("div");
+    card.className = "cardPlan";
+    card.dataset.index = String(i);
+    card.dataset.itemKind = "plan";
+    card.dataset.itemId = String(id);
+
+    card.innerHTML = `
+      <button class="sm-save ${saved ? "isSaved" : ""}" type="button"
+        aria-label="${saved ? "Unsave" : "Save"}" data-save-id="${escapeHtml(id)}" style="z-index:4;">
+        ${bookmarkSvg()}
+      </button>
+
+      <div class="planThumbs" aria-hidden="true">
+        <div class="planShot planShot--a">
+          ${a ? `<img src="${a}" alt="" loading="lazy">` : ``}
+          <div class="shotTag">Shot 1</div>
+        </div>
+        <div class="planShot planShot--b">
+          ${b ? `<img src="${b}" alt="" loading="lazy">` : ``}
+          <div class="shotTag">Shot 2</div>
+        </div>
+      </div>
+
+      <div class="planTop">
+        <div class="planPills">
+          <div class="pill pill--plan"><span class="pillDot"></span>Plan</div>
+          ${shotsCount ? `<div class="pill">${escapeHtml(String(shotsCount))} shots</div>` : ``}
+        </div>
+      </div>
+
+      <div class="planMeta">
+        <h3 class="planName">${escapeHtml(plan?.title || plan?.name || "Cinematic plan")}</h3>
+        <div class="planStats">
+          ${totalDur ? `<div class="stat">⏱ ${escapeHtml(totalDur)}</div>` : ``}
+          ${level ? `<div class="stat">⚡ ${escapeHtml(level)}</div>` : ``}
+        </div>
+        <button class="planCta" type="button" aria-label="Open plan">
+          Open plan <span class="planArrow" aria-hidden="true"></span>
+        </button>
+      </div>
+    `;
+    return card;
+  }
+
   function renderResults() {
     grid.innerHTML = "";
 
     const slice = filtered.slice(0, visibleCount);
     if (slice.length === 0) {
-      grid.innerHTML = `<div class="card" style="padding:14px">No videos match these answers. Try Reset.</div>`;
+      grid.innerHTML = `<div class="card" style="padding:14px">No results match these answers. Try Reset.</div>`;
       if (moreBtn) moreBtn.style.display = "none";
-      refreshPill();
+      if (resultsHead) resultsHead.style.display = "none";
       return;
     }
 
+    const hasPlans = slice.some(isPlanItem);
+    if (resultsHead) resultsHead.style.display = hasPlans ? "flex" : "none";
+
     slice.forEach((v, i) => {
-      const id = getVideoId(v);
-      const saved = isSaved(id);
-
-      const card = document.createElement("div");
-      card.className = "card";
-      card.dataset.index = String(i);
-      card.dataset.videoId = String(id);
-
-      card.innerHTML = `
-        <button class="sm-save ${saved ? "isSaved" : ""}" type="button"
-          aria-label="${saved ? "Unsave" : "Save"}" data-save-id="${escapeHtml(id)}">
-          ${bookmarkSvg()}
-        </button>
-        <div class="thumb"><img src="${v.thumb || ""}" alt="${escapeHtml(v.title || "thumb")}" loading="lazy"></div>
-        <div class="meta">
-          <div class="title">${escapeHtml(v.title || "")}</div>
-          <span class="badge">${escapeHtml(v.duration || "")}</span>
-        </div>
-      `;
+      const card = isPlanItem(v) ? renderPlanCard(v, i) : renderMoveCard(v, i);
       grid.appendChild(card);
     });
 
     if (moreBtn) moreBtn.style.display = filtered.length > visibleCount ? "block" : "none";
-    refreshPill();
   }
 
   if (moreBtn) moreBtn.addEventListener("click", () => { visibleCount += 12; renderResults(); });
 
-  function syncCardSaveUI(video) {
-    const id = getVideoId(video);
+  function syncCardSaveUI(item) {
+    const id = getItemId(item);
     const saved = isSaved(id);
     const sel = `.sm-save[data-save-id="${CSS.escape(String(id))}"]`;
     const btn = grid.querySelector(sel);
@@ -613,75 +463,27 @@
     }
   }
 
-  // ---------------- Fullscreen modal + opened_videos tracking ----------------
-  let currentIndex = -1;
-  const openedSet = new Set(); // in-memory canonical
-  let openedSeeded = false;
-
+  // ---------------- Modal ----------------
   function setModal(open) {
     modal.setAttribute("aria-hidden", open ? "false" : "true");
     locks.modal = !!open;
     applyOverflow();
   }
 
-  function closePlayer() {
+  function closeModal() {
     try { modal._cleanup && modal._cleanup(); } catch (e) {}
     setModal(false);
     modalContent.innerHTML = "";
   }
 
-  async function seedOpenedFromSession() {
-    if (openedSeeded) return;
-    openedSeeded = true;
-    const s = await fetchSession();
-    const arr = s?.library_results_json?.opened_videos;
-    if (Array.isArray(arr)) arr.forEach((x) => openedSet.add(String(x)));
-  }
-
-  async function trackOpened(video) {
-    const sess = getSess();
-    if (!SESSION_MODE || !sess) return;
-
-    const id = String(getVideoId(video) || "").trim();
-    if (!id) return;
-
-    await seedOpenedFromSession();
-    if (openedSet.has(id)) return;
-
-    openedSet.add(id);
-    // PATCH list; backend merge збереже
-    queuePatchLibrary({ opened_videos: Array.from(openedSet) });
-  }
-
-  async function savePickedVideo(video) {
-    const sess = getSess();
-    if (!SESSION_MODE || !sess) return;
-
-    const selected = {
-      title: video?.title || "",
-      videoUrl: video?.videoUrl || video?.video_url || "",
-      thumb: video?.thumb || "",
-      duration: video?.duration || "",
-      picked_at: new Date().toISOString(),
-    };
-
-    // library_results_json deep-merge → filtered_count НЕ зітреться
-    queuePatchSession({
-      library_results_json: { selected_video: selected },
-      cover_image_url: selected.thumb || null,
-    });
-
-    refreshPill();
-  }
-
-  function buildPlayer(video) {
-    const id = getVideoId(video);
+  function buildMovePlayer(video) {
+    const id = getItemId(video);
     const saved = isSaved(id);
 
     modalContent.innerHTML = `
       <div class="player">
         <video id="playerVideo" controls playsinline preload="metadata">
-          <source src="${video.videoUrl}" type="video/mp4">
+          <source src="${video.videoUrl || video.video_url || ""}" type="video/mp4">
         </video>
 
         <div class="player__top">
@@ -701,20 +503,100 @@
     `;
   }
 
-  async function openPlayer(index) {
-    if (!filtered.length) return;
+  function buildPlanModal(plan) {
+    const id = getItemId(plan);
+    const saved = isSaved(id);
 
-    if (modal._cleanup) modal._cleanup();
+    const shots = Array.isArray(plan?.shots) ? plan.shots : [];
+    const steps = Array.isArray(plan?.steps) ? plan.steps : shots; // alias
+
+    const rows = steps.slice(0, 20).map((s, idx) => {
+      const t = s?.title || s?.name || `Shot ${idx + 1}`;
+      const d = s?.duration || s?.time || "";
+      const th = s?.thumb || s?.cover || "";
+      const note = s?.note || s?.desc || s?.description || "";
+      return `
+        <div style="
+          display:flex; gap:12px; align-items:flex-start;
+          padding:12px; border-radius:16px;
+          border:1px solid rgba(255,255,255,.10);
+          background: rgba(255,255,255,.03);
+        ">
+          <div style="width:64px;height:64px;border-radius:14px;overflow:hidden;flex:0 0 auto;background:#000;">
+            ${th ? `<img src="${th}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block;">` : ""}
+          </div>
+          <div style="min-width:0;flex:1;">
+            <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;">
+              <div style="font-weight:950;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                ${escapeHtml(t)}
+              </div>
+              <div style="font-size:12px;font-weight:900;color:rgba(255,255,255,.65);white-space:nowrap;">
+                ${escapeHtml(d)}
+              </div>
+            </div>
+            ${note ? `<div style="margin-top:6px;font-size:13px;line-height:1.35;color:rgba(255,255,255,.70)">${escapeHtml(note)}</div>` : ``}
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    modalContent.innerHTML = `
+      <div style="position:absolute;inset:0;overflow:auto;padding:18px 18px 120px;">
+        <div style="
+          max-width: 980px;
+          margin: 0 auto;
+          border-radius: 22px;
+          border:1px solid rgba(255,255,255,.12);
+          background:
+            radial-gradient(700px 280px at 15% 0%, rgba(201,154,110,.10), transparent 55%),
+            radial-gradient(700px 280px at 95% 0%, rgba(120,59,226,.14), transparent 55%),
+            rgba(18,18,18,.92);
+          box-shadow: 0 30px 120px rgba(0,0,0,.70);
+          overflow:hidden;
+        ">
+          <div style="padding:16px 16px 10px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;gap:12px;align-items:center;">
+            <div style="min-width:0;">
+              <div style="font-weight:950;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                ${escapeHtml(plan?.title || plan?.name || "Cinematic plan")}
+              </div>
+              <div style="margin-top:4px;font-size:12px;font-weight:900;color:rgba(255,255,255,.60);">
+                ${escapeHtml(plan?.total_duration || plan?.duration_total || plan?.duration || "")}
+                ${plan?.level || plan?.difficulty ? ` • ${escapeHtml(plan?.level || plan?.difficulty)}` : ``}
+                ${Array.isArray(steps) && steps.length ? ` • ${escapeHtml(String(steps.length))} shots` : ``}
+              </div>
+            </div>
+
+            <button class="player__close" id="planClose" type="button" aria-label="Close">×</button>
+          </div>
+
+          <div style="padding:14px 16px;">
+            ${plan?.description ? `<div style="margin:0 0 12px;font-size:13px;line-height:1.45;color:rgba(255,255,255,.72)">${escapeHtml(plan.description)}</div>` : ``}
+            <div style="display:grid;gap:10px;">
+              ${rows || `<div style="padding:12px;border-radius:16px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.03);color:rgba(255,255,255,.70)">No plan steps found in index JSON.</div>`}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="player__bar" style="position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:5;">
+        <button class="btn" id="savePlanBtn" type="button">${saved ? "Saved" : "Save"}</button>
+        <button class="btn" id="closePlanBtn" type="button">Close</button>
+      </div>
+    `;
+  }
+
+  let currentIndex = -1;
+
+  function openMove(index) {
+    if (!filtered.length) return;
     currentIndex = index;
 
-    const video = filtered[currentIndex];
-    if (!video || !video.videoUrl) return;
+    const v = filtered[currentIndex];
+    if (!v || !(v.videoUrl || v.video_url)) return;
 
-    // track opened & picked (не блокує UI)
-    trackOpened(video);
-    savePickedVideo(video);
+    if (modal._cleanup) modal._cleanup();
 
-    buildPlayer(video);
+    buildMovePlayer(v);
     setModal(true);
 
     const player = $("playerVideo");
@@ -726,11 +608,11 @@
     const fsBtn = $("fsBtn");
     const saveMoveBtn = $("saveMoveBtn");
 
-    const goPrev = () => { if (currentIndex > 0) openPlayer(currentIndex - 1); };
-    const goNext = () => { if (currentIndex + 1 < filtered.length) openPlayer(currentIndex + 1); };
-    const onEsc = (e) => { if (e.key === "Escape") closePlayer(); };
+    const goPrev = () => { if (currentIndex > 0) openAny(currentIndex - 1, { prefer: "move" }); };
+    const goNext = () => { if (currentIndex + 1 < filtered.length) openAny(currentIndex + 1, { prefer: "move" }); };
+    const onEsc = (e) => { if (e.key === "Escape") closeModal(); };
 
-    if (closeBtn) closeBtn.addEventListener("click", closePlayer);
+    if (closeBtn) closeBtn.addEventListener("click", closeModal);
     if (prevBtn) prevBtn.addEventListener("click", goPrev);
     if (nextBtn) nextBtn.addEventListener("click", goNext);
 
@@ -743,10 +625,9 @@
 
     if (saveMoveBtn) {
       saveMoveBtn.addEventListener("click", async () => {
-        const nowSaved = await toggleSaved(video);
+        const nowSaved = await toggleSaved(v);
         saveMoveBtn.textContent = nowSaved ? "Saved" : "Save";
-        syncCardSaveUI(video);
-        refreshPill();
+        syncCardSaveUI(v);
       });
     }
 
@@ -760,13 +641,64 @@
     }
 
     window.addEventListener("keydown", onEsc);
-    modalBackdrop.addEventListener("click", closePlayer, { once: true });
+    modalBackdrop.addEventListener("click", closeModal, { once: true });
 
     player && player.play().catch(() => {});
     modal._cleanup = () => {
       window.removeEventListener("keydown", onEsc);
       try { player && player.pause(); } catch (e) {}
     };
+  }
+
+  function openPlan(index) {
+    currentIndex = index;
+    const plan = filtered[currentIndex];
+    if (!plan) return;
+
+    if (modal._cleanup) modal._cleanup();
+    buildPlanModal(plan);
+    setModal(true);
+
+    const closeA = $("planClose");
+    const closeB = $("closePlanBtn");
+    const saveBtn = $("savePlanBtn");
+
+    const onEsc = (e) => { if (e.key === "Escape") closeModal(); };
+    if (closeA) closeA.addEventListener("click", closeModal);
+    if (closeB) closeB.addEventListener("click", closeModal);
+    if (saveBtn) {
+      saveBtn.addEventListener("click", async () => {
+        const nowSaved = await toggleSaved(plan);
+        saveBtn.textContent = nowSaved ? "Saved" : "Save";
+        syncCardSaveUI(plan);
+      });
+    }
+
+    window.addEventListener("keydown", onEsc);
+    modalBackdrop.addEventListener("click", closeModal, { once: true });
+    modal._cleanup = () => window.removeEventListener("keydown", onEsc);
+  }
+
+  function openAny(index, { prefer = "any" } = {}) {
+    // prefer can skip plans when navigating Prev/Next inside video player
+    const item = filtered[index];
+    if (!item) return;
+
+    if (prefer === "move" && isPlanItem(item)) {
+      // find nearest move in the same direction
+      const dir = index > currentIndex ? 1 : -1;
+      let j = index;
+      while (j >= 0 && j < filtered.length) {
+        if (!isPlanItem(filtered[j]) && (filtered[j].videoUrl || filtered[j].video_url)) {
+          return openMove(j);
+        }
+        j += dir;
+      }
+      return; // no move found
+    }
+
+    if (isPlanItem(item)) return openPlan(index);
+    return openMove(index);
   }
 
   // Grid click handler
@@ -776,30 +708,28 @@
       e.preventDefault();
       e.stopPropagation();
 
-      const card = e.target.closest(".card");
+      const card = e.target.closest(".card, .cardPlan");
       if (!card) return;
 
       const idx = Number(card.dataset.index || "-1");
       if (!Number.isFinite(idx) || idx < 0) return;
 
-      const video = filtered[idx];
-      if (!video) return;
+      const item = filtered[idx];
+      if (!item) return;
 
-      const nowSaved = await toggleSaved(video);
+      const nowSaved = await toggleSaved(item);
       saveBtn.classList.toggle("isSaved", nowSaved);
       saveBtn.setAttribute("aria-label", nowSaved ? "Unsave" : "Save");
-
-      refreshPill();
       return;
     }
 
-    const card = e.target.closest(".card");
+    const card = e.target.closest(".card, .cardPlan");
     if (!card) return;
 
     const idx = Number(card.dataset.index || "-1");
     if (!Number.isFinite(idx) || idx < 0) return;
 
-    openPlayer(idx);
+    openAny(idx);
   });
 
   // ---------------- Chat options ----------------
@@ -830,7 +760,7 @@
 
         if (stepIndex >= steps.length) {
           clearOptions();
-          await addBotTyped("Done. Pick a move from the results and watch it fullscreen.");
+          await addBotTyped("Nice. Now you’ll see both single moves and cinematic plans in the results.");
           return;
         }
 
@@ -873,24 +803,29 @@
     await addBotTyped("Hi. Let’s pick the best moves for your scene.");
     await addBotTyped(steps[0].text);
 
-    if (allVideos.length) applyFilters();
+    if (allItems.length) applyFilters();
     renderOptions();
   });
 
-  // ---------------- Load videos ----------------
-  async function loadVideos() {
+  // ---------------- Load index ----------------
+  async function loadIndex() {
     try {
       safeText(matchCount, "Loading…");
       const res = await fetch(CDN_INDEX_URL, { cache: "no-store" });
       if (!res.ok) throw new Error("HTTP " + res.status);
       const json = await res.json();
-      allVideos = Array.isArray(json) ? json : [];
+
+      // supports either array or {items:[...]}
+      const items = Array.isArray(json) ? json : (Array.isArray(json?.items) ? json.items : []);
+      allItems = items || [];
+
       applyFilters();
     } catch (e) {
-      console.error("[SM] loadVideos error:", e);
+      console.error("[SM] loadIndex error:", e);
       safeText(matchCount, "—");
-      grid.innerHTML = `<div class="card" style="padding:14px">Failed to load videos.</div>`;
+      grid.innerHTML = `<div class="card" style="padding:14px">Failed to load library index.</div>`;
       if (moreBtn) moreBtn.style.display = "none";
+      if (resultsHead) resultsHead.style.display = "none";
     }
   }
 
@@ -898,18 +833,17 @@
   (async () => {
     if (backBtn) backBtn.disabled = true;
 
-    await getMember(12000).catch(() => null);
+    // try auth (but don’t block library if not logged in)
+    await getMember(4000).catch(() => null);
 
-    await hydrateSavedCache();
-    await fetchSession({ force: true }); // primes cache
-    await seedOpenedFromSession();
-    refreshPill();
+    // saved moves are optional; if not logged in it will just stay empty
+    await hydrateSavedCache().catch(() => null);
 
     await addBotTyped("Hi. Let’s pick the best moves for your scene.");
     await addBotTyped(steps[0].text);
     renderOptions();
 
-    await loadVideos();
+    await loadIndex();
     renderResults();
   })();
 })();
