@@ -421,8 +421,10 @@
     const shots = steps.length ? `${steps.length} shots` : "Plan";
     const total = p?.total_duration || "";
     const desc = p?.description || "";
-    const a = p?.thumb_a || steps?.[0]?.thumb || "";
-    const b = p?.thumb_b || steps?.[1]?.thumb || a || "";
+    const placeholder = "https://skymotion-cdn.b-cdn.net/thumb.jpg";
+
+    const a = p?.thumb_a || steps?.[0]?.thumb || placeholder;
+    const b = p?.thumb_b || steps?.[1]?.thumb || placeholder;
     const title = p?.title || "Cinematic plan";
 
     card.innerHTML = `
