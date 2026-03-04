@@ -451,11 +451,6 @@
         <h3 class="planName">${escapeHtml(title)}</h3>
         <div class="planStats">
           ${desc ? `<span>${escapeHtml(desc)}</span>` : ``}
-        </div>
-        <div class="planCta" role="button" aria-label="Open plan">
-          Open plan <span class="planArrow" aria-hidden="true"></span>
-        </div>
-      </div>
     `;
     return card;
   }
