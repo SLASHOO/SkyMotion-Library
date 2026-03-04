@@ -486,21 +486,40 @@
   // ✅ FIXED: proper closing tags (no broken DOM)
   function renderPlanCard(p, i) {
   const card = document.createElement("div");
+  const stepsArr = Array.isArray(p?.steps) ? p.steps : [];
+
+  const thumb = String(
+    p?.thumb || p?.thumb_a || p?.thumb_b || stepsArr?.[0]?.thumb || ""
+  ).trim();
+
+  const cover = thumb || "https://skymotion-cdn.b-cdn.net/thumb.jpg";
+
   card.className = "cardPlan";
   card.dataset.index = String(i);
   card.dataset.kind = "plan";
 
   card.innerHTML = `
-    <div style="position:absolute; inset:0; display:flex; align-items:flex-end; padding:14px;">
+    <div class="planThumbs">
+      <div class="planShot planShot--a">
+        <img src="${cover}" alt="${escapeHtml(p?.title || "Plan")}" loading="lazy">
+      </div>
+      <div class="planShot planShot--b">
+        <img src="${cover}" alt="${escapeHtml(p?.title || "Plan")}" loading="lazy">
+      </div>
+    </div>
+
+    <div style="position:absolute; inset:0; display:flex; align-items:flex-end; padding:14px; z-index:2;">
       <div style="background:rgba(0,0,0,.6); border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:12px; width:100%;">
         <div style="font-weight:900;">${escapeHtml(p?.title || "Plan")}</div>
-        <div style="opacity:.7; font-weight:800; font-size:12px;">id: ${escapeHtml(p?.id || "")}</div>
+        <div style="opacity:.7; font-weight:800; font-size:12px;">
+          ${stepsArr.length ? `${stepsArr.length} shots` : "Plan"}${p?.total_duration ? ` · ${escapeHtml(p.total_duration)}` : ""}
+        </div>
       </div>
     </div>
   `;
+
   return card;
 }
-
   function renderResults() {
     grid.innerHTML = "";
     const slice = filtered.slice(0, visibleCount);
