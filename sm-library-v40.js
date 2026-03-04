@@ -475,52 +475,57 @@
     return card;
   }
 
-  function renderPlanCard(p, i) {
-    const stepsArr = Array.isArray(p?.steps) ? p.steps : [];
-    const title = escapeHtml(p?.title || "Cinematic plan");
+  const FALLBACK_THUMB = "https://skymotion-cdn.b-cdn.net/thumb.jpg";
 
-    const imgA = pickThumb(p?.thumb_a, stepsArr?.[0]?.thumb, p?.thumb, FALLBACK_THUMB);
-    const imgB = pickThumb(p?.thumb_b, stepsArr?.[1]?.thumb, p?.thumb, FALLBACK_THUMB);
-
-    const shotsCount = Number(p?.shots_count) || stepsArr.length || 0;
-    const total = escapeHtml(p?.total_duration || "");
-    const desc = escapeHtml(p?.description || "");
-
-    const card = document.createElement("div");
-    card.className = "cardPlan";
-    card.dataset.index = String(i);
-    card.dataset.kind = "plan";
-    card.dataset.itemId = String(p?.id || "");
-
-    card.innerHTML = `
-      <div class="planThumbs">
-        <div class="planShot planShot--a">
-          <img src="${imgA}" alt="${title} shot A" loading="lazy">
-        </div>
-        <div class="planShot planShot--b">
-          <img src="${imgB}" alt="${title} shot B" loading="lazy">
-        </div>
-      </div>
-
-      <div class="planTop">
-        <div class="planPills">
-          <span class="pill pill--plan"><span class="pillDot"></span>Plan</span>
-          ${total ? `<span class="pill">${total}</span>` : ``}
-          <span class="pill">${shotsCount ? `${shotsCount} shots` : `Plan`}</span>
-        </div>
-      </div>
-
-      <div class="planMeta">
-        <h3 class="planName">${title}</h3>
-        <div class="planStats">
-          ${desc ? `<span>${desc}</span>` : ``}
-        </div>
-      </div>
-    `;
-
-    attachImgFallback(card);
-    return card;
+function pickThumb(...candidates) {
+  for (const c of candidates) {
+    const s = (c ?? "").toString().trim();
+    if (s) return s;
   }
+  return FALLBACK_THUMB;
+}
+
+function renderPlanCard(p, i) {
+  const stepsArr = Array.isArray(p?.steps) ? p.steps : [];
+  const titleRaw = p?.title || "Cinematic plan";
+
+  // ✅ Головна фотка: thumb_a → step[0].thumb → thumb → FALLBACK
+  const cover = pickThumb(p?.thumb_a, stepsArr?.[0]?.thumb, p?.thumb, FALLBACK_THUMB);
+
+  const shotsCount = Number(p?.shots_count) || stepsArr.length || 0;
+  const total = p?.total_duration || "";
+  const desc  = p?.description || "";
+
+  const card = document.createElement("div");
+  card.className = "cardPlan";
+  card.dataset.index = String(i);
+  card.dataset.kind = "plan";
+  card.dataset.itemId = String(p?.id || "");
+
+  card.innerHTML = `
+    <div class="planMedia">
+      <img src="${cover}" alt="${escapeHtml(titleRaw)}" loading="lazy">
+    </div>
+
+    <div class="planInfo">
+      <div class="planPills">
+        <span class="pill pill--plan"><span class="pillDot"></span>Plan</span>
+        ${total ? `<span class="pill">${escapeHtml(total)}</span>` : ``}
+        ${shotsCount ? `<span class="pill">${escapeHtml(shotsCount)} shots</span>` : ``}
+      </div>
+
+      <h3 class="planName">${escapeHtml(titleRaw)}</h3>
+
+      ${desc ? `<div class="planDesc">${escapeHtml(desc)}</div>` : ``}
+    </div>
+  `;
+
+  // якщо зламається картинка — підставимо fallback
+  const img = card.querySelector("img");
+  if (img) img.addEventListener("error", () => { img.src = FALLBACK_THUMB; }, { once: true });
+
+  return card;
+}
 
   function renderResults() {
     grid.innerHTML = "";
