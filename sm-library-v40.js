@@ -1,7 +1,7 @@
 (() => {
   "use strict";
-  if (window.__SM_LIBRARY_V1_STANDALONE_V1__) return;
-  window.__SM_LIBRARY_V1_STANDALONE_V1__ = true;
+  if (window.__SM_LIBRARY_STANDALONE_PLANS_V1__) return;
+  window.__SM_LIBRARY_STANDALONE_PLANS_V1__ = true;
 
   const CDN_INDEX_URL = "https://skymotion-cdn.b-cdn.net/videos_index.json";
   const API_BASE = String(window.SM_API_BASE || "https://skymotion.onrender.com").replace(/\/$/, "");
@@ -18,11 +18,11 @@
 
   const chat = $("chat");
   const grid = $("resultsGrid");
-  const resultsHead = $("resultsHead"); // optional
   const matchCount = $("matchCount");
   const resetBtn = $("resetBtn");
   const backBtn = $("backBtn");
   const moreBtn = $("moreBtn");
+  const resultsHead = $("resultsHead");
 
   const modal = $("modal");
   const modalBackdrop = $("modalBackdrop");
@@ -35,7 +35,6 @@
 
   // ---------------- Helpers ----------------
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 
   function escapeHtml(str) {
     return String(str ?? "")
@@ -46,6 +45,7 @@
       .replaceAll("'", "&#039;");
   }
   function safeText(el, t) { if (el) el.textContent = String(t ?? ""); }
+  function isPlainObject(x) { return !!x && typeof x === "object" && !Array.isArray(x); }
 
   // ---------------- Memberstack (cached) ----------------
   let _memberCache = null;
@@ -107,7 +107,10 @@
 
   // ---------------- Saved moves (API only) ----------------
   let savedCache = [];
-  function getItemId(v) {
+  function getItemKind(x) {
+    return String(x?.kind || x?.type || "move").toLowerCase();
+  }
+  function getMoveId(v) {
     return v?.id || v?.slug || v?.videoUrl || v?.video_url || ((v?.title || "") + "|" + (v?.duration || ""));
   }
 
@@ -136,40 +139,49 @@
     return Array.isArray(savedCache) && savedCache.some((x) => String(x?.id) === String(id));
   }
 
-  async function toggleSaved(item) {
-    const id = getItemId(item);
+  async function toggleSaved(move) {
+    const id = getMoveId(move);
 
     if (isSaved(id)) {
-      try { await api(`/v1/saved-moves/${encodeURIComponent(id)}`, { method: "DELETE" }); }
-      catch (e) { console.warn("[SM] unsave failed", e?.status, e?.payload || e); }
-
+      try {
+        await api(`/v1/saved-moves/${encodeURIComponent(id)}`, { method: "DELETE" });
+      } catch (e) {
+        console.warn("[SM] unsave failed", e?.status, e?.payload || e);
+      }
       await hydrateSavedCache();
       return false;
     }
 
     const payload = {
       id,
-      title: item?.title || item?.name || "",
-      thumb: item?.thumb || item?.cover || item?.thumb_a || "",
-      video_url: item?.videoUrl || item?.video_url || "",
-      duration: item?.duration || item?.total_duration || "",
-      // tags (moves keep these; plans can ignore)
-      env: item?.env || [],
-      risk: item?.risk || [],
-      subject: item?.subject || [],
-      pilot: item?.pilot || [],
-      mood: item?.mood || [],
-      kind: item?.kind || item?.type || (isPlanItem(item) ? "plan" : "move"),
+      title: move?.title || "",
+      thumb: move?.thumb || "",
+      video_url: move?.videoUrl || move?.video_url || "",
+      duration: move?.duration || "",
+      env: move?.env || [],
+      risk: move?.risk || [],
+      subject: move?.subject || [],
+      pilot: move?.pilot || [],
+      mood: move?.mood || [],
     };
 
-    try { await api(`/v1/saved-moves`, { method: "POST", body: JSON.stringify(payload) }); }
-    catch (e) { console.warn("[SM] save failed", e?.status, e?.payload || e); }
+    try {
+      await api(`/v1/saved-moves`, { method: "POST", body: JSON.stringify(payload) });
+    } catch (e) {
+      console.warn("[SM] save failed", e?.status, e?.payload || e);
+    }
 
     await hydrateSavedCache();
     return true;
   }
 
-  // ---------------- UI locks ----------------
+  function bookmarkSvg() {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6.5 3.5h11c.83 0 1.5.67 1.5 1.5v16.1c0 .78-.86 1.26-1.53.86L12 19.35 6.53 21.96C5.86 22.26 5 21.78 5 21.1V5c0-.83.67-1.5 1.5-1.5z"></path>
+    </svg>`;
+  }
+
+  // ---------------- Drawer open/close ----------------
   const locks = { drawer: false, modal: false };
   function applyOverflow() {
     const lock = locks.drawer || locks.modal;
@@ -177,19 +189,17 @@
     document.body.style.overflow = lock ? "hidden" : "";
   }
 
-  // ---------------- Drawer open/close ----------------
   function isDrawerMode() { return window.matchMedia("(max-width: 900px)").matches; }
+
   function openAssistant() {
     assistant.classList.add("active");
     if (assistantBackdropEl) assistantBackdropEl.style.display = "block";
-    scope.classList.add("smFiltersOpen");
     locks.drawer = true;
     applyOverflow();
   }
   function closeAssistant() {
     assistant.classList.remove("active");
     if (assistantBackdropEl) assistantBackdropEl.style.display = "none";
-    scope.classList.remove("smFiltersOpen");
     locks.drawer = false;
     applyOverflow();
   }
@@ -202,13 +212,24 @@
     if (!isDrawerMode()) {
       locks.drawer = false;
       if (assistantBackdropEl) assistantBackdropEl.style.display = "none";
-      scope.classList.remove("smFiltersOpen");
       assistant.classList.remove("active");
       applyOverflow();
     }
   });
 
-  // ESC priority
+  // ---------------- Modal ----------------
+  function setModal(open) {
+    modal.setAttribute("aria-hidden", open ? "false" : "true");
+    locks.modal = !!open;
+    applyOverflow();
+  }
+
+  function closeModal() {
+    try { modal._cleanup && modal._cleanup(); } catch (e) {}
+    setModal(false);
+    modalContent.innerHTML = "";
+  }
+
   window.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
     if (modal && modal.getAttribute("aria-hidden") === "false") { closeModal(); return; }
@@ -255,7 +276,8 @@
   function clearOptions() { chat.querySelectorAll(".options").forEach((el) => el.remove()); }
 
   let allItems = [];
-  let filtered = [];
+  let filteredMoves = [];
+  let filteredPlans = [];
   let visibleCount = 12;
 
   const steps = [
@@ -280,15 +302,23 @@
     return a.includes(tag);
   }
 
-  function isPlanItem(v) {
-    const k = String(v?.kind || v?.type || "").toLowerCase();
-    return v?.is_plan === true || k === "plan" || k === "sequence" || k === "cinematic_plan";
-  }
-
   const state = {};
   let stepIndex = 0;
 
-  function filterItems(items) {
+  function passesFilters(item, picked) {
+    if (picked.env && !hasTag(item.env, picked.env)) return false;
+    if (picked.subject && !hasTag(item.subject, picked.subject)) return false;
+    if (picked.risk && !hasTag(item.risk, picked.risk)) return false;
+    if (picked.mood && !hasTag(item.mood, picked.mood)) return false;
+
+    if (picked.pilot) {
+      if (!hasTag(item.pilot, picked.pilot)) return false;
+      if (picked.pilot === "safe" && hasTag(item.risk, "some_risks")) return false;
+    }
+    return true;
+  }
+
+  function applyFilters() {
     const picked = {
       env: mapTags.env[state.env],
       subject: mapTags.subject[state.subject],
@@ -297,187 +327,151 @@
       mood: mapTags.mood[state.mood],
     };
 
-    // rule: BEFORE any filtering => show only moves.
-    // AFTER user has answered at least 1 step => allow plans in results too.
-    const allowPlans = stepIndex > 0;
+    const moves = allItems.filter((x) => getItemKind(x) !== "plan");
+    const plans = allItems.filter((x) => getItemKind(x) === "plan");
 
-    return items.filter((v) => {
-      const plan = isPlanItem(v);
-      if (plan && !allowPlans) return false;
+    filteredMoves = moves.filter((v) => passesFilters(v, picked));
 
-      if (picked.env && !hasTag(v.env, picked.env)) return false;
-      if (picked.subject && !hasTag(v.subject, picked.subject)) return false;
-      if (picked.risk && !hasTag(v.risk, picked.risk)) return false;
-      if (picked.mood && !hasTag(v.mood, picked.mood)) return false;
+    const allowPlans = stepIndex > 0; // твоя логіка: після 1-го вибору
+    filteredPlans = allowPlans ? plans.filter((p) => passesFilters(p, picked)) : [];
 
-      if (picked.pilot) {
-        if (!hasTag(v.pilot, picked.pilot)) return false;
-        if (picked.pilot === "safe" && hasTag(v.risk, "some_risks")) return false;
-      }
-      return true;
-    });
-  }
+    const total = filteredMoves.length + filteredPlans.length;
+    safeText(matchCount, String(total));
 
-  function applyFilters() {
-    filtered = filterItems(allItems);
-    safeText(matchCount, String(filtered.length));
     visibleCount = 12;
     renderResults();
-  }
 
-  function bookmarkSvg() {
-    return `<svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M6.5 3.5h11c.83 0 1.5.67 1.5 1.5v16.1c0 .78-.86 1.26-1.53.86L12 19.35 6.53 21.96C5.86 22.26 5 21.78 5 21.1V5c0-.83.67-1.5 1.5-1.5z"></path>
-    </svg>`;
-  }
-
-  function renderMoveCard(v, i) {
-    const id = getItemId(v);
-    const saved = isSaved(id);
-
-    const card = document.createElement("div");
-    card.className = "card";
-    card.dataset.index = String(i);
-    card.dataset.itemKind = "move";
-    card.dataset.itemId = String(id);
-
-    card.innerHTML = `
-      <button class="sm-save ${saved ? "isSaved" : ""}" type="button"
-        aria-label="${saved ? "Unsave" : "Save"}" data-save-id="${escapeHtml(id)}">
-        ${bookmarkSvg()}
-      </button>
-      <div class="thumb"><img src="${v.thumb || ""}" alt="${escapeHtml(v.title || "thumb")}" loading="lazy"></div>
-      <div class="meta">
-        <div class="title">${escapeHtml(v.title || "")}</div>
-        <span class="badge">${escapeHtml(v.duration || "")}</span>
-      </div>
-    `;
-    return card;
+    if (resultsHead) {
+      resultsHead.style.display = filteredPlans.length ? "flex" : "none";
+    }
   }
 
   function pickPlanThumbs(plan) {
-    // accepted shapes:
-    // plan.thumbs: [a,b]
-    // plan.shots: [{thumb},{thumb}]
-    // plan.thumb_a/thumb_b
-    const t = Array.isArray(plan?.thumbs) ? plan.thumbs : null;
-    if (t && t[0] && t[1]) return [t[0], t[1]];
+    const a =
+      plan?.thumb_a ||
+      plan?.thumbA ||
+      plan?.thumb_1 ||
+      plan?.thumb ||
+      (Array.isArray(plan?.steps) && plan.steps[0]?.thumb) ||
+      "";
 
-    const shots = Array.isArray(plan?.shots) ? plan.shots : [];
-    if (shots[0]?.thumb && shots[1]?.thumb) return [shots[0].thumb, shots[1].thumb];
+    const b =
+      plan?.thumb_b ||
+      plan?.thumbB ||
+      plan?.thumb_2 ||
+      (Array.isArray(plan?.steps) && plan.steps[1]?.thumb) ||
+      (Array.isArray(plan?.steps) && plan.steps[0]?.thumb) ||
+      a ||
+      "";
 
-    const a = plan?.thumb_a || plan?.thumbA || plan?.thumb || plan?.cover || "";
-    const b = plan?.thumb_b || plan?.thumbB || plan?.thumb2 || a || "";
-    return [a, b];
-  }
-
-  function renderPlanCard(plan, i) {
-    const id = getItemId(plan);
-    const saved = isSaved(id);
-    const [a, b] = pickPlanThumbs(plan);
-
-    const shotsCount =
-      Number(plan?.shots_count) ||
-      (Array.isArray(plan?.shots) ? plan.shots.length : 0) ||
-      Number(plan?.steps_count) || 0;
-
-    const totalDur = plan?.total_duration || plan?.duration_total || plan?.duration || "";
-    const level = plan?.level || plan?.difficulty || plan?.skill || "";
-
-    const card = document.createElement("div");
-    card.className = "cardPlan";
-    card.dataset.index = String(i);
-    card.dataset.itemKind = "plan";
-    card.dataset.itemId = String(id);
-
-    card.innerHTML = `
-      <button class="sm-save ${saved ? "isSaved" : ""}" type="button"
-        aria-label="${saved ? "Unsave" : "Save"}" data-save-id="${escapeHtml(id)}" style="z-index:4;">
-        ${bookmarkSvg()}
-      </button>
-
-      <div class="planThumbs" aria-hidden="true">
-        <div class="planShot planShot--a">
-          ${a ? `<img src="${a}" alt="" loading="lazy">` : ``}
-          <div class="shotTag">Shot 1</div>
-        </div>
-        <div class="planShot planShot--b">
-          ${b ? `<img src="${b}" alt="" loading="lazy">` : ``}
-          <div class="shotTag">Shot 2</div>
-        </div>
-      </div>
-
-      <div class="planTop">
-        <div class="planPills">
-          <div class="pill pill--plan"><span class="pillDot"></span>Plan</div>
-          ${shotsCount ? `<div class="pill">${escapeHtml(String(shotsCount))} shots</div>` : ``}
-        </div>
-      </div>
-
-      <div class="planMeta">
-        <h3 class="planName">${escapeHtml(plan?.title || plan?.name || "Cinematic plan")}</h3>
-        <div class="planStats">
-          ${totalDur ? `<div class="stat">⏱ ${escapeHtml(totalDur)}</div>` : ``}
-          ${level ? `<div class="stat">⚡ ${escapeHtml(level)}</div>` : ``}
-        </div>
-        <button class="planCta" type="button" aria-label="Open plan">
-          Open plan <span class="planArrow" aria-hidden="true"></span>
-        </button>
-      </div>
-    `;
-    return card;
+    return { a, b };
   }
 
   function renderResults() {
     grid.innerHTML = "";
 
-    const slice = filtered.slice(0, visibleCount);
-    if (slice.length === 0) {
-      grid.innerHTML = `<div class="card" style="padding:14px">No results match these answers. Try Reset.</div>`;
+    const combined = [...filteredPlans, ...filteredMoves]; // плани зверху, рухи нижче
+    const slice = combined.slice(0, visibleCount);
+
+    if (!slice.length) {
+      grid.innerHTML = `<div class="card" style="padding:14px">No matches. Try Reset.</div>`;
       if (moreBtn) moreBtn.style.display = "none";
       if (resultsHead) resultsHead.style.display = "none";
       return;
     }
 
-    const hasPlans = slice.some(isPlanItem);
-    if (resultsHead) resultsHead.style.display = hasPlans ? "flex" : "none";
+    slice.forEach((item, i) => {
+      const kind = getItemKind(item);
 
-    slice.forEach((v, i) => {
-      const card = isPlanItem(v) ? renderPlanCard(v, i) : renderMoveCard(v, i);
+      if (kind === "plan") {
+        const { a, b } = pickPlanThumbs(item);
+        const shotsCount = Array.isArray(item?.steps) ? item.steps.length : (item?.shots_count || item?.shots || 0);
+        const totalDur = item?.total_duration || item?.duration || "";
+
+        const card = document.createElement("div");
+        card.className = "cardPlan";
+        card.dataset.kind = "plan";
+        card.dataset.planId = String(item?.id || "");
+        card.dataset.index = String(i);
+
+        card.innerHTML = `
+          <div class="planThumbs">
+            <div class="planShot planShot--a">
+              <img src="${a}" alt="${escapeHtml(item?.title || "Plan")}" loading="lazy">
+              <div class="shotTag">SHOT 1</div>
+            </div>
+            <div class="planShot planShot--b">
+              <img src="${b}" alt="${escapeHtml(item?.title || "Plan")}" loading="lazy">
+              <div class="shotTag">SHOT 2</div>
+            </div>
+          </div>
+
+          <div class="planTop">
+            <div class="planPills">
+              <div class="pill pill--plan"><span class="pillDot"></span>PLAN</div>
+              ${totalDur ? `<div class="pill">${escapeHtml(totalDur)}</div>` : ``}
+              ${shotsCount ? `<div class="pill">${escapeHtml(String(shotsCount))} shots</div>` : ``}
+            </div>
+          </div>
+
+          <div class="planMeta">
+            <h3 class="planName">${escapeHtml(item?.title || "")}</h3>
+            <div class="planStats">
+              ${item?.mood?.[0] ? `<span>⚡ ${escapeHtml(item.mood[0])}</span>` : ``}
+              ${item?.pilot?.[0] ? `<span>🎮 ${escapeHtml(item.pilot[0])}</span>` : ``}
+            </div>
+            <div class="planCta" role="button" aria-label="Open plan">
+              Start Plan <span class="planArrow" aria-hidden="true"></span>
+            </div>
+          </div>
+        `;
+
+        grid.appendChild(card);
+        return;
+      }
+
+      // MOVE card
+      const id = getMoveId(item);
+      const saved = isSaved(id);
+
+      const card = document.createElement("div");
+      card.className = "card";
+      card.dataset.kind = "move";
+      card.dataset.index = String(i);
+      card.dataset.moveId = String(id);
+
+      card.innerHTML = `
+        <button class="sm-save ${saved ? "isSaved" : ""}" type="button"
+          aria-label="${saved ? "Unsave" : "Save"}" data-save-id="${escapeHtml(id)}">
+          ${bookmarkSvg()}
+        </button>
+        <div class="thumb"><img src="${item.thumb || ""}" alt="${escapeHtml(item.title || "thumb")}" loading="lazy"></div>
+        <div class="meta">
+          <div class="title">${escapeHtml(item.title || "")}</div>
+          <span class="badge">${escapeHtml(item.duration || "")}</span>
+        </div>
+      `;
       grid.appendChild(card);
     });
 
-    if (moreBtn) moreBtn.style.display = filtered.length > visibleCount ? "block" : "none";
+    if (moreBtn) moreBtn.style.display = (filteredPlans.length + filteredMoves.length) > visibleCount ? "block" : "none";
   }
 
-  if (moreBtn) moreBtn.addEventListener("click", () => { visibleCount += 12; renderResults(); });
+  if (moreBtn) moreBtn.addEventListener("click", () => {
+    visibleCount += 12;
+    renderResults();
+  });
 
-  function syncCardSaveUI(item) {
-    const id = getItemId(item);
-    const saved = isSaved(id);
-    const sel = `.sm-save[data-save-id="${CSS.escape(String(id))}"]`;
-    const btn = grid.querySelector(sel);
-    if (btn) {
-      btn.classList.toggle("isSaved", saved);
-      btn.setAttribute("aria-label", saved ? "Unsave" : "Save");
-    }
+  function findItemByCombinedIndex(idx) {
+    const combined = [...filteredPlans, ...filteredMoves];
+    return combined[idx] || null;
   }
 
-  // ---------------- Modal ----------------
-  function setModal(open) {
-    modal.setAttribute("aria-hidden", open ? "false" : "true");
-    locks.modal = !!open;
-    applyOverflow();
-  }
+  // ---------------- Player (for MOVE) ----------------
+  let currentIndex = -1;
 
-  function closeModal() {
-    try { modal._cleanup && modal._cleanup(); } catch (e) {}
-    setModal(false);
-    modalContent.innerHTML = "";
-  }
-
-  function buildMovePlayer(video) {
-    const id = getItemId(video);
+  function buildPlayer(video) {
+    const id = getMoveId(video);
     const saved = isSaved(id);
 
     modalContent.innerHTML = `
@@ -503,100 +497,18 @@
     `;
   }
 
-  function buildPlanModal(plan) {
-    const id = getItemId(plan);
-    const saved = isSaved(id);
+  async function openPlayer(index) {
+    const item = findItemByCombinedIndex(index);
+    if (!item) return;
+    if (getItemKind(item) === "plan") return openPlan(item);
 
-    const shots = Array.isArray(plan?.shots) ? plan.shots : [];
-    const steps = Array.isArray(plan?.steps) ? plan.steps : shots; // alias
-
-    const rows = steps.slice(0, 20).map((s, idx) => {
-      const t = s?.title || s?.name || `Shot ${idx + 1}`;
-      const d = s?.duration || s?.time || "";
-      const th = s?.thumb || s?.cover || "";
-      const note = s?.note || s?.desc || s?.description || "";
-      return `
-        <div style="
-          display:flex; gap:12px; align-items:flex-start;
-          padding:12px; border-radius:16px;
-          border:1px solid rgba(255,255,255,.10);
-          background: rgba(255,255,255,.03);
-        ">
-          <div style="width:64px;height:64px;border-radius:14px;overflow:hidden;flex:0 0 auto;background:#000;">
-            ${th ? `<img src="${th}" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block;">` : ""}
-          </div>
-          <div style="min-width:0;flex:1;">
-            <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;">
-              <div style="font-weight:950;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                ${escapeHtml(t)}
-              </div>
-              <div style="font-size:12px;font-weight:900;color:rgba(255,255,255,.65);white-space:nowrap;">
-                ${escapeHtml(d)}
-              </div>
-            </div>
-            ${note ? `<div style="margin-top:6px;font-size:13px;line-height:1.35;color:rgba(255,255,255,.70)">${escapeHtml(note)}</div>` : ``}
-          </div>
-        </div>
-      `;
-    }).join("");
-
-    modalContent.innerHTML = `
-      <div style="position:absolute;inset:0;overflow:auto;padding:18px 18px 120px;">
-        <div style="
-          max-width: 980px;
-          margin: 0 auto;
-          border-radius: 22px;
-          border:1px solid rgba(255,255,255,.12);
-          background:
-            radial-gradient(700px 280px at 15% 0%, rgba(201,154,110,.10), transparent 55%),
-            radial-gradient(700px 280px at 95% 0%, rgba(120,59,226,.14), transparent 55%),
-            rgba(18,18,18,.92);
-          box-shadow: 0 30px 120px rgba(0,0,0,.70);
-          overflow:hidden;
-        ">
-          <div style="padding:16px 16px 10px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;justify-content:space-between;gap:12px;align-items:center;">
-            <div style="min-width:0;">
-              <div style="font-weight:950;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                ${escapeHtml(plan?.title || plan?.name || "Cinematic plan")}
-              </div>
-              <div style="margin-top:4px;font-size:12px;font-weight:900;color:rgba(255,255,255,.60);">
-                ${escapeHtml(plan?.total_duration || plan?.duration_total || plan?.duration || "")}
-                ${plan?.level || plan?.difficulty ? ` • ${escapeHtml(plan?.level || plan?.difficulty)}` : ``}
-                ${Array.isArray(steps) && steps.length ? ` • ${escapeHtml(String(steps.length))} shots` : ``}
-              </div>
-            </div>
-
-            <button class="player__close" id="planClose" type="button" aria-label="Close">×</button>
-          </div>
-
-          <div style="padding:14px 16px;">
-            ${plan?.description ? `<div style="margin:0 0 12px;font-size:13px;line-height:1.45;color:rgba(255,255,255,.72)">${escapeHtml(plan.description)}</div>` : ``}
-            <div style="display:grid;gap:10px;">
-              ${rows || `<div style="padding:12px;border-radius:16px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.03);color:rgba(255,255,255,.70)">No plan steps found in index JSON.</div>`}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="player__bar" style="position:fixed;left:50%;bottom:28px;transform:translateX(-50%);z-index:5;">
-        <button class="btn" id="savePlanBtn" type="button">${saved ? "Saved" : "Save"}</button>
-        <button class="btn" id="closePlanBtn" type="button">Close</button>
-      </div>
-    `;
-  }
-
-  let currentIndex = -1;
-
-  function openMove(index) {
-    if (!filtered.length) return;
     currentIndex = index;
 
-    const v = filtered[currentIndex];
-    if (!v || !(v.videoUrl || v.video_url)) return;
+    const video = item;
+    const url = video?.videoUrl || video?.video_url;
+    if (!url) return;
 
-    if (modal._cleanup) modal._cleanup();
-
-    buildMovePlayer(v);
+    buildPlayer(video);
     setModal(true);
 
     const player = $("playerVideo");
@@ -608,9 +520,8 @@
     const fsBtn = $("fsBtn");
     const saveMoveBtn = $("saveMoveBtn");
 
-    const goPrev = () => { if (currentIndex > 0) openAny(currentIndex - 1, { prefer: "move" }); };
-    const goNext = () => { if (currentIndex + 1 < filtered.length) openAny(currentIndex + 1, { prefer: "move" }); };
-    const onEsc = (e) => { if (e.key === "Escape") closeModal(); };
+    const goPrev = () => { if (currentIndex > 0) openPlayer(currentIndex - 1); };
+    const goNext = () => { if (currentIndex + 1 < (filteredPlans.length + filteredMoves.length)) openPlayer(currentIndex + 1); };
 
     if (closeBtn) closeBtn.addEventListener("click", closeModal);
     if (prevBtn) prevBtn.addEventListener("click", goPrev);
@@ -625,9 +536,9 @@
 
     if (saveMoveBtn) {
       saveMoveBtn.addEventListener("click", async () => {
-        const nowSaved = await toggleSaved(v);
+        const nowSaved = await toggleSaved(video);
         saveMoveBtn.textContent = nowSaved ? "Saved" : "Save";
-        syncCardSaveUI(v);
+        syncCardSaveUI(video);
       });
     }
 
@@ -640,81 +551,139 @@
       });
     }
 
-    window.addEventListener("keydown", onEsc);
     modalBackdrop.addEventListener("click", closeModal, { once: true });
-
     player && player.play().catch(() => {});
+
     modal._cleanup = () => {
-      window.removeEventListener("keydown", onEsc);
       try { player && player.pause(); } catch (e) {}
     };
   }
 
-  function openPlan(index) {
-    currentIndex = index;
-    const plan = filtered[currentIndex];
-    if (!plan) return;
+  function syncCardSaveUI(video) {
+    const id = getMoveId(video);
+    const saved = isSaved(id);
+    const sel = `.sm-save[data-save-id="${CSS.escape(String(id))}"]`;
+    const btn = grid.querySelector(sel);
+    if (btn) {
+      btn.classList.toggle("isSaved", saved);
+      btn.setAttribute("aria-label", saved ? "Unsave" : "Save");
+    }
+  }
 
-    if (modal._cleanup) modal._cleanup();
-    buildPlanModal(plan);
+  // ---------------- Plan modal ----------------
+  function openPlan(plan) {
+    const stepsArr = Array.isArray(plan?.steps) ? plan.steps : [];
+    const { a, b } = pickPlanThumbs(plan);
+    const totalDur = plan?.total_duration || plan?.duration || "";
+    const shotsCount = stepsArr.length || plan?.shots_count || plan?.shots || 0;
+
+    const stepsHtml = stepsArr.map((s, idx) => {
+      const t = escapeHtml(s?.title || `Shot ${idx + 1}`);
+      const d = escapeHtml(s?.duration || "");
+      const note = escapeHtml(s?.note || "");
+      const th = escapeHtml(s?.thumb || "");
+      return `
+        <div style="
+          display:flex; gap:12px; align-items:center;
+          padding:10px; border-radius:16px;
+          border:1px solid rgba(255,255,255,.10);
+          background: rgba(255,255,255,.03);
+        ">
+          <div style="width:56px;height:56px;border-radius:14px;overflow:hidden;flex:0 0 auto;background:#000;">
+            ${th ? `<img src="${th}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;">` : ``}
+          </div>
+          <div style="min-width:0;flex:1;">
+            <div style="font-weight:950;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${t}</div>
+            <div style="margin-top:4px;font-size:12px;font-weight:900;color:rgba(255,255,255,.65);display:flex;gap:10px;flex-wrap:wrap;">
+              ${d ? `<span>⏱ ${d}</span>` : ``}
+              ${note ? `<span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw;">${note}</span>` : ``}
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    modalContent.innerHTML = `
+      <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center;">
+        <div style="
+          width:min(980px, calc(100vw - 28px));
+          max-height: calc(100vh - 28px);
+          overflow:auto;
+          border-radius: 22px;
+          border:1px solid rgba(255,255,255,.12);
+          background:
+            radial-gradient(700px 320px at 15% 0%, rgba(201,154,110,.10), transparent 60%),
+            radial-gradient(700px 320px at 100% 0%, rgba(120,59,226,.12), transparent 60%),
+            rgba(16,16,16,.92);
+          box-shadow: 0 40px 140px rgba(0,0,0,.75);
+        ">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid rgba(255,255,255,.08);">
+            <div style="min-width:0;">
+              <div style="font-weight:950; font-size:14px; color:rgba(255,255,255,.70);">Cinematic Plan</div>
+              <div style="font-weight:950; font-size:18px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(plan?.title || "")}</div>
+              <div style="margin-top:6px; display:flex; gap:10px; flex-wrap:wrap; font-size:12px; font-weight:900; color:rgba(255,255,255,.65);">
+                ${totalDur ? `<span>⏱ ${escapeHtml(totalDur)}</span>` : ``}
+                ${shotsCount ? `<span>🎬 ${escapeHtml(String(shotsCount))} shots</span>` : ``}
+                ${plan?.mood?.[0] ? `<span>⚡ ${escapeHtml(plan.mood[0])}</span>` : ``}
+              </div>
+            </div>
+            <button id="planCloseBtn" class="player__close" type="button" aria-label="Close">×</button>
+          </div>
+
+          <div style="padding:16px; display:grid; grid-template-columns: 1fr 1.1fr; gap:14px;">
+            <div style="border-radius:22px; overflow:hidden; border:1px solid rgba(255,255,255,.10); background:#000;">
+              <div style="display:grid; grid-template-rows: 1fr 1fr; min-height: 360px;">
+                <div style="position:relative;">
+                  ${a ? `<img src="${escapeHtml(a)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;">` : ``}
+                  <div style="position:absolute;left:12px;top:12px;" class="pill pill--plan"><span class="pillDot"></span>SHOT 1</div>
+                </div>
+                <div style="position:relative; border-top:1px solid rgba(255,255,255,.10);">
+                  ${b ? `<img src="${escapeHtml(b)}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;">` : ``}
+                  <div style="position:absolute;left:12px;top:12px;" class="pill pill--plan"><span class="pillDot"></span>SHOT 2</div>
+                </div>
+              </div>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <div style="font-weight:950; font-size:14px;">Shots order</div>
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                ${stepsHtml || `<div style="opacity:.75">No steps yet. Add plan.steps[] in JSON.</div>`}
+              </div>
+            </div>
+          </div>
+
+          <div style="padding: 0 16px 16px; color:rgba(255,255,255,.60); font-weight:900; font-size:12px;">
+            Tip: keep every shot 5–8s and cut on motion for a “pro” feeling.
+          </div>
+        </div>
+      </div>
+    `;
+
     setModal(true);
 
-    const closeA = $("planClose");
-    const closeB = $("closePlanBtn");
-    const saveBtn = $("savePlanBtn");
-
-    const onEsc = (e) => { if (e.key === "Escape") closeModal(); };
-    if (closeA) closeA.addEventListener("click", closeModal);
-    if (closeB) closeB.addEventListener("click", closeModal);
-    if (saveBtn) {
-      saveBtn.addEventListener("click", async () => {
-        const nowSaved = await toggleSaved(plan);
-        saveBtn.textContent = nowSaved ? "Saved" : "Save";
-        syncCardSaveUI(plan);
-      });
-    }
-
-    window.addEventListener("keydown", onEsc);
+    const closeBtn = $("planCloseBtn");
+    if (closeBtn) closeBtn.addEventListener("click", closeModal);
     modalBackdrop.addEventListener("click", closeModal, { once: true });
-    modal._cleanup = () => window.removeEventListener("keydown", onEsc);
   }
 
-  function openAny(index, { prefer = "any" } = {}) {
-    // prefer can skip plans when navigating Prev/Next inside video player
-    const item = filtered[index];
-    if (!item) return;
-
-    if (prefer === "move" && isPlanItem(item)) {
-      // find nearest move in the same direction
-      const dir = index > currentIndex ? 1 : -1;
-      let j = index;
-      while (j >= 0 && j < filtered.length) {
-        if (!isPlanItem(filtered[j]) && (filtered[j].videoUrl || filtered[j].video_url)) {
-          return openMove(j);
-        }
-        j += dir;
-      }
-      return; // no move found
-    }
-
-    if (isPlanItem(item)) return openPlan(index);
-    return openMove(index);
-  }
-
-  // Grid click handler
+  // ---------------- Grid click handler ----------------
   grid.addEventListener("click", async (e) => {
+    const card = e.target.closest(".card, .cardPlan");
+    if (!card) return;
+
+    const kind = card.dataset.kind || "";
+
+    // save only for move cards
     const saveBtn = e.target.closest(".sm-save");
     if (saveBtn) {
+      if (kind !== "move") return;
       e.preventDefault();
       e.stopPropagation();
-
-      const card = e.target.closest(".card, .cardPlan");
-      if (!card) return;
 
       const idx = Number(card.dataset.index || "-1");
       if (!Number.isFinite(idx) || idx < 0) return;
 
-      const item = filtered[idx];
+      const item = findItemByCombinedIndex(idx);
       if (!item) return;
 
       const nowSaved = await toggleSaved(item);
@@ -723,13 +692,14 @@
       return;
     }
 
-    const card = e.target.closest(".card, .cardPlan");
-    if (!card) return;
-
     const idx = Number(card.dataset.index || "-1");
     if (!Number.isFinite(idx) || idx < 0) return;
 
-    openAny(idx);
+    const item = findItemByCombinedIndex(idx);
+    if (!item) return;
+
+    if (getItemKind(item) === "plan") openPlan(item);
+    else openPlayer(idx);
   });
 
   // ---------------- Chat options ----------------
@@ -758,9 +728,13 @@
 
         applyFilters();
 
+        if (stepIndex === 1) {
+          await addBotTyped("Nice. Now you’ll see both single moves and cinematic plans in the results.");
+        }
+
         if (stepIndex >= steps.length) {
           clearOptions();
-          await addBotTyped("Nice. Now you’ll see both single moves and cinematic plans in the results.");
+          await addBotTyped("Done. Pick a move or open a plan.");
           return;
         }
 
@@ -800,6 +774,8 @@
     clearOptions();
     if (backBtn) backBtn.disabled = true;
 
+    if (resultsHead) resultsHead.style.display = "none";
+
     await addBotTyped("Hi. Let’s pick the best moves for your scene.");
     await addBotTyped(steps[0].text);
 
@@ -807,23 +783,19 @@
     renderOptions();
   });
 
-  // ---------------- Load index ----------------
-  async function loadIndex() {
+  // ---------------- Load items ----------------
+  async function loadItems() {
     try {
       safeText(matchCount, "Loading…");
       const res = await fetch(CDN_INDEX_URL, { cache: "no-store" });
       if (!res.ok) throw new Error("HTTP " + res.status);
       const json = await res.json();
-
-      // supports either array or {items:[...]}
-      const items = Array.isArray(json) ? json : (Array.isArray(json?.items) ? json.items : []);
-      allItems = items || [];
-
+      allItems = Array.isArray(json) ? json : [];
       applyFilters();
     } catch (e) {
-      console.error("[SM] loadIndex error:", e);
+      console.error("[SM] loadItems error:", e);
       safeText(matchCount, "—");
-      grid.innerHTML = `<div class="card" style="padding:14px">Failed to load library index.</div>`;
+      grid.innerHTML = `<div class="card" style="padding:14px">Failed to load videos.</div>`;
       if (moreBtn) moreBtn.style.display = "none";
       if (resultsHead) resultsHead.style.display = "none";
     }
@@ -833,17 +805,14 @@
   (async () => {
     if (backBtn) backBtn.disabled = true;
 
-    // try auth (but don’t block library if not logged in)
-    await getMember(4000).catch(() => null);
-
-    // saved moves are optional; if not logged in it will just stay empty
-    await hydrateSavedCache().catch(() => null);
+    await getMember(12000).catch(() => null);
+    await hydrateSavedCache();
 
     await addBotTyped("Hi. Let’s pick the best moves for your scene.");
     await addBotTyped(steps[0].text);
     renderOptions();
 
-    await loadIndex();
+    await loadItems();
     renderResults();
   })();
 })();
