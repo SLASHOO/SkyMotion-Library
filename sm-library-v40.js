@@ -479,21 +479,51 @@
     return card;
   }
 
-  // ---------------- PLAN card (REMOVED old renderer) ----------------
-  // залишив тільки "заглушку", щоб файл не падав.
-  // сюди ти потім вставиш НОВИЙ renderPlanCard (окремо).
   function renderPlanCard(p, i) {
-    const card = document.createElement("div");
-    card.className = "cardPlan";
-    card.dataset.index = String(i);
-    card.dataset.kind = "plan";
-    card.dataset.itemId = String(p?.id || "");
-    card.innerHTML = `<div style="padding:14px; font-weight:900; color:rgba(255,255,255,.75)">
-      Plan card renderer is not installed yet.
-    </div>`;
-    return card;
+  const stepsArr = Array.isArray(p?.steps) ? p.steps : [];
+  const titleRaw = p?.title || "Cinematic plan";
+
+  const cover = pickThumb(p?.thumb_a, stepsArr?.[0]?.thumb, p?.thumb, FALLBACK_THUMB);
+
+  const shotsCount = Number(p?.shots_count) || stepsArr.length || 0;
+  const total = p?.total_duration || "";
+  const desc  = p?.description || "";
+
+  const card = document.createElement("div");
+  card.className = "cardPlan";
+  card.dataset.index = String(i);
+  card.dataset.kind = "plan";
+  card.dataset.itemId = String(p?.id || "");
+
+  card.innerHTML = `
+    <div class="planMedia">
+      <img class="planImg" src="${cover}" alt="${escapeHtml(titleRaw)}" loading="lazy">
+      <div class="planPills">
+        <span class="pill pill--plan"><span class="pillDot"></span>Plan</span>
+        ${total ? `<span class="pill">${escapeHtml(total)}</span>` : ``}
+        ${shotsCount ? `<span class="pill">${escapeHtml(shotsCount)} shots</span>` : ``}
+      </div>
+      <div class="planOpen" aria-hidden="true"></div>
+    </div>
+
+    <div class="planInfo">
+      <h3 class="planName">${escapeHtml(titleRaw)}</h3>
+      ${desc ? `<div class="planDesc">${escapeHtml(desc)}</div>` : ``}
+    </div>
+  `;
+
+  const img = card.querySelector(".planImg");
+  if (img) {
+    img.addEventListener("error", () => {
+      if (img.dataset.smFallbackApplied === "1") return;
+      img.dataset.smFallbackApplied = "1";
+      img.src = FALLBACK_THUMB;
+    });
   }
 
+  return card;
+}
+  
   function renderResults() {
     grid.innerHTML = "";
     const slice = filtered.slice(0, visibleCount);
@@ -814,68 +844,6 @@
       if (resultsHead) resultsHead.style.display = "none";
     }
   }
-
-  // ===== PLAN CARD (JS) — clean =====
-const FALLBACK_THUMB = "https://skymotion-cdn.b-cdn.net/thumb.jpg";
-
-function pickThumb(...candidates) {
-  for (const c of candidates) {
-    const s = String(c ?? "").trim();
-    if (s) return s;
-  }
-  return FALLBACK_THUMB;
-}
-
-function renderPlanCard(p, i) {
-  const stepsArr = Array.isArray(p?.steps) ? p.steps : [];
-  const titleRaw = p?.title || "Cinematic plan";
-
-  // cover: thumb_a → first step thumb → thumb → fallback
-  const cover = pickThumb(p?.thumb_a, stepsArr?.[0]?.thumb, p?.thumb, FALLBACK_THUMB);
-
-  const shotsCount = Number(p?.shots_count) || stepsArr.length || 0;
-  const total = p?.total_duration || "";
-  const desc = p?.description || "";
-
-  const card = document.createElement("div");
-  card.className = "cardPlan";
-  card.dataset.index = String(i);
-  card.dataset.kind = "plan";
-  card.dataset.itemId = String(p?.id || "");
-
-  card.innerHTML = `
-    <div class="planMedia">
-      <img class="planImg" src="${cover}" alt="${escapeHtml(titleRaw)}" loading="lazy">
-      <div class="planPills">
-        <span class="pill pill--plan"><span class="pillDot"></span>Plan</span>
-        ${total ? `<span class="pill">${escapeHtml(total)}</span>` : ``}
-        ${shotsCount ? `<span class="pill">${escapeHtml(shotsCount)} shots</span>` : ``}
-      </div>
-      <div class="planOpen" aria-hidden="true"></div>
-    </div>
-
-    <div class="planInfo">
-      <h3 class="planName">${escapeHtml(titleRaw)}</h3>
-      ${desc ? `<div class="planDesc">${escapeHtml(desc)}</div>` : ``}
-    </div>
-  `;
-
-  // robust fallback on image error
-  const img = card.querySelector(".planImg");
-  if (img) {
-    img.addEventListener(
-      "error",
-      () => {
-        if (img.dataset.smFallbackApplied === "1") return;
-        img.dataset.smFallbackApplied = "1";
-        img.src = FALLBACK_THUMB;
-      },
-      { once: false }
-    );
-  }
-
-  return card;
-}
 
   // ---------------- INIT ----------------
   (async () => {
