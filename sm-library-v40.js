@@ -1,4 +1,3 @@
-<script>
 /* =========================================================
   SKYMOTION — LIBRARY v1 (STANDALONE) + PLANS (FINAL) — INTEGRATED
   - Plans + Moves mixed by default (no filtering yet)
@@ -864,4 +863,3 @@
     await loadItems();
   })();
 })();
-</script>
