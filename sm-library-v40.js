@@ -1,5 +1,3 @@
-тепер той js можеш інтегрувати сюди
-
 /* =========================================================
   SKYMOTION — LIBRARY v1 (STANDALONE) + PLANS (FINAL)
   - Plans + Moves mixed by default (no filtering yet)
