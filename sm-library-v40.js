@@ -1,10 +1,11 @@
+тепер той js можеш інтегрувати сюди
+
 /* =========================================================
-  SKYMOTION — LIBRARY v1 (STANDALONE) + PLANS (FINAL) — INTEGRATED
+  SKYMOTION — LIBRARY v1 (STANDALONE) + PLANS (FINAL)
   - Plans + Moves mixed by default (no filtering yet)
   - Uses existing #modal overlay for BOTH video + plan
-  - Robust image fallback everywhere
+  - Robust image fallback everywhere (NO "one photo breaks all")
   - No leaking listeners, single ESC handler
-  - Works with your HTML/CSS (ids/classes must match)
 ========================================================= */
 
 (() => {
@@ -480,53 +481,56 @@
     return card;
   }
 
-  // ---------------- PLAN CARD renderer (matches your CLEAN CSS) ----------------
-  function renderPlanCard(p, i) {
-    const stepsArr = Array.isArray(p?.steps) ? p.steps : [];
-    const titleRaw = p?.title || "Cinematic plan";
-    const cover = pickThumb(p?.thumb_a, stepsArr?.[0]?.thumb, p?.thumb, FALLBACK_THUMB);
+  // =========================
+// PLAN CARD renderer — v2 (by sketch)
+// ВАЖЛИВО: НЕ оголошуй повторно FALLBACK_THUMB/pickThumb якщо вони вже є вище в IIFE.
+// Просто залиш renderPlanCard.
+// =========================
+function renderPlanCard(p, i) {
+  const stepsArr = Array.isArray(p?.steps) ? p.steps : [];
+  const titleRaw = p?.title || "Cinematic plan";
+  const cover = pickThumb(p?.thumb_a, stepsArr?.[0]?.thumb, p?.thumb, FALLBACK_THUMB);
 
-    const shotsCount = Number(p?.shots_count) || stepsArr.length || 0;
-    const total = p?.total_duration || "";
-    const desc  = p?.description || "";
+  const shotsCount = Number(p?.shots_count) || stepsArr.length || 0;
+  const total = p?.total_duration || "";
+  const desc  = p?.description || "";
 
-    const card = document.createElement("div");
-    card.className = "cardPlan";
-    card.dataset.index = String(i);
-    card.dataset.kind = "plan";
-    card.dataset.itemId = String(p?.id || "");
+  const card = document.createElement("div");
+  card.className = "cardPlan";
+  card.dataset.index = String(i);
+  card.dataset.kind = "plan";
+  card.dataset.itemId = String(p?.id || "");
 
-    card.innerHTML = `
-      <div class="planMedia">
-        <img class="planImg" src="${cover}" alt="${escapeHtml(titleRaw)}" loading="lazy">
-        <div class="planPills">
-          <span class="pill pill--plan"><span class="pillDot"></span>Plan</span>
-          ${total ? `<span class="pill">${escapeHtml(total)}</span>` : ``}
-          ${shotsCount ? `<span class="pill">${escapeHtml(shotsCount)} shots</span>` : ``}
-        </div>
-        <div class="planOpen" aria-hidden="true"></div>
+  card.innerHTML = `
+    <div class="planMedia">
+      <img class="planImg" src="${cover}" alt="${escapeHtml(titleRaw)}" loading="lazy">
+      <div class="planPills">
+        <span class="pill pill--plan"><span class="pillDot"></span>Plan</span>
+        ${total ? `<span class="pill">${escapeHtml(total)}</span>` : ``}
+        ${shotsCount ? `<span class="pill">${escapeHtml(shotsCount)} shots</span>` : ``}
       </div>
+    </div>
 
-      <div class="planCaption">Cinematic Plan</div>
+    <div class="planCaption">Cinematic Plan</div>
 
-      <div class="planBubble">
-        <h3 class="planName">${escapeHtml(titleRaw)}</h3>
-        ${desc ? `<div class="planDesc">${escapeHtml(desc)}</div>` : ``}
-      </div>
-    `;
+    <div class="planBubble">
+      <h3 class="planName">${escapeHtml(titleRaw)}</h3>
+      ${desc ? `<div class="planDesc">${escapeHtml(desc)}</div>` : ``}
+    </div>
+  `;
 
-    const img = card.querySelector(".planImg");
-    if (img) {
-      img.addEventListener("error", () => {
-        if (img.dataset.smFallbackApplied === "1") return;
-        img.dataset.smFallbackApplied = "1";
-        img.src = FALLBACK_THUMB;
-      });
-    }
-
-    return card;
+  const img = card.querySelector(".planImg");
+  if (img) {
+    img.addEventListener("error", () => {
+      if (img.dataset.smFallbackApplied === "1") return;
+      img.dataset.smFallbackApplied = "1";
+      img.src = FALLBACK_THUMB;
+    });
   }
 
+  return card;
+}
+  
   function renderResults() {
     grid.innerHTML = "";
     const slice = filtered.slice(0, visibleCount);
@@ -731,7 +735,6 @@
       </div>
     `;
 
-    // Inject styles once per open (scoped inside modalContent)
     const style = document.createElement("style");
     style.textContent = `
       #sm-library-scope #modal .smPlan{ position:absolute; inset:0; display:flex; flex-direction:column; padding:18px; gap:14px; color: rgba(255,255,255,.92); }
@@ -797,7 +800,7 @@
     };
   }
 
-  // ---------------- Grid click handler (single) ----------------
+  // ---------------- Grid click handler ----------------
   grid.addEventListener("click", async (e) => {
     const card = e.target.closest(".card, .cardPlan");
     if (!card) return;
