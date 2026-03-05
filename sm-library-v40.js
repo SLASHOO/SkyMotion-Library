@@ -479,10 +479,14 @@
     return card;
   }
 
-  function renderPlanCard(p, i) {
+  // =========================
+// PLAN CARD renderer — v2 (by sketch)
+// ВАЖЛИВО: НЕ оголошуй повторно FALLBACK_THUMB/pickThumb якщо вони вже є вище в IIFE.
+// Просто залиш renderPlanCard.
+// =========================
+function renderPlanCard(p, i) {
   const stepsArr = Array.isArray(p?.steps) ? p.steps : [];
   const titleRaw = p?.title || "Cinematic plan";
-
   const cover = pickThumb(p?.thumb_a, stepsArr?.[0]?.thumb, p?.thumb, FALLBACK_THUMB);
 
   const shotsCount = Number(p?.shots_count) || stepsArr.length || 0;
@@ -503,10 +507,11 @@
         ${total ? `<span class="pill">${escapeHtml(total)}</span>` : ``}
         ${shotsCount ? `<span class="pill">${escapeHtml(shotsCount)} shots</span>` : ``}
       </div>
-      <div class="planOpen" aria-hidden="true"></div>
     </div>
 
-    <div class="planInfo">
+    <div class="planCaption">Cinematic Plan</div>
+
+    <div class="planBubble">
       <h3 class="planName">${escapeHtml(titleRaw)}</h3>
       ${desc ? `<div class="planDesc">${escapeHtml(desc)}</div>` : ``}
     </div>
