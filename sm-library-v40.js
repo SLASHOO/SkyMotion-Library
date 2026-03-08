@@ -129,8 +129,8 @@
     );
   }
 
-function getPlanFinalVideo(plan) {
-  return normalizeUrl(plan?.final?.videoUrl) || "https://skymotion-cdn.b-cdn.net/1.mp4";
+function getPlanFinalVideo() {
+  return "https://skymotion-cdn.b-cdn.net/1.mp4";
 }
 
   function getPlanStepPoster(plan, step) {
@@ -802,7 +802,7 @@ function getPlanFinalVideo(plan) {
   }
 
   function buildResultSlide(plan) {
-  const finalVideo = getPlanFinalVideo(plan);
+  const finalVideo = getPlanFinalVideo();
   const poster = pickThumb(plan?.final?.poster, getPlanCover(plan));
 
   return `
