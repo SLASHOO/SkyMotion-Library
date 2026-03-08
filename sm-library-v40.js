@@ -129,9 +129,9 @@
     );
   }
 
-  function getPlanFinalVideo(plan) {
-    return normalizeUrl(plan?.final?.videoUrl || plan?.final_video || plan?.videoUrl || "");
-  }
+function getPlanFinalVideo(plan) {
+  return normalizeUrl(plan?.final?.videoUrl) || "https://skymotion-cdn.b-cdn.net/1.mp4";
+}
 
   function getPlanStepPoster(plan, step) {
     return pickThumb(
@@ -802,31 +802,27 @@
   }
 
   function buildResultSlide(plan) {
-    const finalVideo = getPlanFinalVideo(plan);
-    const poster = pickThumb(plan?.final?.poster, getPlanCover(plan));
+  const finalVideo = getPlanFinalVideo(plan);
+  const poster = pickThumb(plan?.final?.poster, getPlanCover(plan));
 
-    return `
-      <section class="sm-plan-slide" data-plan-slide="0">
-        <div class="sm-plan-result">
-          <video
-            class="sm-plan-result__video"
-            id="planResultVideo"
-            autoplay
-            muted
-            playsinline
-            preload="metadata"
-            poster="${escapeHtml(poster)}"
-          >
-            ${finalVideo ? `<source src="${escapeHtml(finalVideo)}" type="video/mp4">` : ""}
-          </video>
-
-          <button class="sm-plan-result__play" type="button" aria-label="Play result video">
-            <span class="sm-plan-play-icon"></span>
-          </button>
-        </div>
-      </section>
-    `;
-  }
+  return `
+    <section class="sm-plan-slide" data-plan-slide="0">
+      <div class="sm-plan-result">
+        <video
+          class="sm-plan-result__video"
+          id="planResultVideo"
+          autoplay
+          muted
+          playsinline
+          preload="auto"
+          poster="${escapeHtml(poster)}"
+        >
+          <source src="${escapeHtml(finalVideo)}" type="video/mp4">
+        </video>
+      </div>
+    </section>
+  `;
+}
 
   function buildStepSlide(plan, step, stepIndex) {
     const shotRef = Number(step?.shot_ref || stepIndex + 1);
@@ -994,9 +990,8 @@
     setPlanModal(true);
     planModal.classList.add("is-ready");
 
-    const resultVideo = $("planResultVideo");
-    const resultPlay = planTrack.querySelector(".sm-plan-result__play");
-    const stepPlayButtons = Array.from(planTrack.querySelectorAll(".sm-plan-step__play"));
+   const resultVideo = $("planResultVideo");
+   const stepPlayButtons = Array.from(planTrack.querySelectorAll(".sm-plan-step__play"));
 
     function updateSlider() {
       planTrack.style.transform = `translateX(-${activeIndex * 100}%)`;
@@ -1029,11 +1024,6 @@
       goNext();
     }
 
-    function onResultPlayClick() {
-      if (!resultVideo) return;
-      if (resultVideo.paused) resultVideo.play().catch(() => {});
-      else resultVideo.pause();
-    }
 
     function onStepPlayClick(e) {
       openPlanStepVideo(e.currentTarget);
@@ -1083,7 +1073,6 @@
       resultVideo.play().catch(() => {});
     }
 
-    if (resultPlay) resultPlay.addEventListener("click", onResultPlayClick);
     stepPlayButtons.forEach((btn) => btn.addEventListener("click", onStepPlayClick));
 
     planModalBackdrop.addEventListener("click", onPlanBackdrop);
@@ -1105,7 +1094,6 @@
         try { resultVideo.pause(); } catch (_) {}
       }
 
-      if (resultPlay) resultPlay.removeEventListener("click", onResultPlayClick);
       stepPlayButtons.forEach((btn) => btn.removeEventListener("click", onStepPlayClick));
 
       planModalBackdrop.removeEventListener("click", onPlanBackdrop);
