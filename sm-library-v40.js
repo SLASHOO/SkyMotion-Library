@@ -883,10 +883,20 @@
 
           <div class="sm-plan-step__bottom">
             <div class="sm-plan-edit">
-              ${buildEditShots(plan, shotRef)}
-              <div class="sm-plan-edit__tip">${escapeHtml(tip)}</div>
-              <div class="sm-plan-edit__note">${escapeHtml(note)}</div>
-            </div>
+  ${buildEditShots(plan, shotRef)}
+
+  <div class="sm-plan-edit__meta">
+    <div class="sm-plan-edit__text">
+      <div class="sm-plan-edit__tip">${escapeHtml(tip)}</div>
+      <div class="sm-plan-edit__note">${escapeHtml(note)}</div>
+    </div>
+
+    <div class="sm-plan-edit__stats">
+      <div class="sm-plan-edit__stat">Cut</div>
+      <div class="sm-plan-edit__stat">${escapeHtml(step?.duration || "6.0s")}</div>
+    </div>
+  </div>
+</div>
           </div>
         </div>
       </section>
