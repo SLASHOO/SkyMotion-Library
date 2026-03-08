@@ -1,19 +1,22 @@
 /* =========================================================
-  SKYMOTION — LIBRARY v1 (STANDALONE) + PLANS (CLEAN)
+  SKYMOTION — LIBRARY v1 (STANDALONE) + PLANS (IDEAL)
   - Plans + Moves mixed by default
   - OLD #modal = fullscreen video player only
   - NEW #planModal = cinematic plan slider modal
+  - Clickable dots
+  - Desktop click zones + keyboard arrows
+  - Result autoplay -> auto next
   - Robust image fallback
-  - Single ESC handler
   - Scoped. Webflow-safe.
 ========================================================= */
 
 (() => {
   "use strict";
-  if (window.__SM_LIBRARY_V1_CLEAN__) return;
-  window.__SM_LIBRARY_V1_CLEAN__ = true;
+  if (window.__SM_LIBRARY_V1_IDEAL__) return;
+  window.__SM_LIBRARY_V1_IDEAL__ = true;
 
   const FALLBACK_THUMB = "https://skymotion-cdn.b-cdn.net/thumb.jpg";
+  const RESULT_VIDEO_URL = "https://skymotion-cdn.b-cdn.net/1.mp4";
   const CDN_INDEX_URL =
     "https://skymotion-cdn.b-cdn.net/videos_index.json?v=" + Date.now();
 
@@ -129,9 +132,9 @@
     );
   }
 
-function getPlanFinalVideo() {
-  return "https://skymotion-cdn.b-cdn.net/1.mp4";
-}
+  function getPlanFinalVideo() {
+    return RESULT_VIDEO_URL;
+  }
 
   function getPlanStepPoster(plan, step) {
     return pickThumb(
@@ -204,7 +207,7 @@ function getPlanFinalVideo() {
     return payload;
   }
 
-  // ---------------- Saved moves (API only) ----------------
+  // ---------------- Saved moves ----------------
   let savedCache = [];
 
   function getVideoId(v) {
@@ -285,7 +288,7 @@ function getPlanFinalVideo() {
     document.body.style.overflow = lock ? "hidden" : "";
   }
 
-  // ---------------- Drawer open/close ----------------
+  // ---------------- Drawer ----------------
   function isDrawerMode() {
     return window.matchMedia("(max-width: 900px)").matches;
   }
@@ -320,7 +323,7 @@ function getPlanFinalVideo() {
     }
   });
 
-  // ---------------- Video modal helpers ----------------
+  // ---------------- OLD video modal ----------------
   function setModal(open) {
     modal.setAttribute("aria-hidden", open ? "false" : "true");
     locks.modal = !!open;
@@ -330,13 +333,12 @@ function getPlanFinalVideo() {
   function closeModal() {
     try { modal._cleanup && modal._cleanup(); } catch (_) {}
     modal._cleanup = null;
-
     setModal(false);
     modalContent.innerHTML = "";
     modal.classList.remove("isPlan");
   }
 
-  // ---------------- Plan modal helpers ----------------
+  // ---------------- NEW plan modal ----------------
   function setPlanModal(open) {
     planModal.setAttribute("aria-hidden", open ? "false" : "true");
     locks.modal = !!open;
@@ -353,7 +355,7 @@ function getPlanFinalVideo() {
     planModal.classList.remove("is-ready");
   }
 
-  // ---------------- Single global ESC handler ----------------
+  // ---------------- ESC ----------------
   window.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
 
@@ -372,7 +374,7 @@ function getPlanFinalVideo() {
     }
   });
 
-  // ---------------- Chat / filters (UI-only for now) ----------------
+  // ---------------- Chat / filters ----------------
   let isBusy = false;
   const history = [];
 
@@ -430,7 +432,7 @@ function getPlanFinalVideo() {
   const state = {};
   let stepIndex = 0;
 
-  // ---------------- Data + Results ----------------
+  // ---------------- Data ----------------
   let allItems = [];
   let filtered = [];
   let visibleCount = 12;
@@ -441,7 +443,7 @@ function getPlanFinalVideo() {
   }
 
   function applyFilters() {
-    filtered = allItems.slice(); // TODO: real filtering later
+    filtered = allItems.slice();
     safeText(matchCount, String(filtered.length));
     visibleCount = 12;
     renderResults();
@@ -575,7 +577,12 @@ function getPlanFinalVideo() {
       FALLBACK_THUMB
     );
 
-    const shotsCount = Number(p?.shots_count) || stepsArr.length || (Array.isArray(p?.edit?.shots) ? p.edit.shots.length : 0) || 0;
+    const shotsCount =
+      Number(p?.shots_count) ||
+      stepsArr.length ||
+      (Array.isArray(p?.edit?.shots) ? p.edit.shots.length : 0) ||
+      0;
+
     const total = p?.total_duration || formatSeconds(p?.final?.duration_s);
     const desc = p?.description || "";
 
@@ -657,7 +664,7 @@ function getPlanFinalVideo() {
     }
   }
 
-  // ---------------- Video Player modal ----------------
+  // ---------------- Video player ----------------
   let currentIndex = -1;
 
   function buildVideoPlayer(video) {
@@ -771,22 +778,22 @@ function getPlanFinalVideo() {
     };
   }
 
-  // ---------------- Plan viewer modal ----------------
+  // ---------------- Plan viewer helpers ----------------
   function buildPlanDots(total, activeIndex) {
     planDots.innerHTML = "";
     for (let i = 0; i < total; i++) {
-      const dot = document.createElement("div");
+      const dot = document.createElement("button");
+      dot.type = "button";
       dot.className = "sm-plan-dot" + (i === activeIndex ? " is-active" : "");
-      dot.setAttribute("aria-hidden", "true");
+      dot.setAttribute("aria-label", `Go to slide ${i + 1}`);
+      dot.dataset.slide = String(i);
       planDots.appendChild(dot);
     }
   }
 
   function buildEditShots(plan, activeShotRef) {
     const shots = Array.isArray(plan?.edit?.shots) ? plan.edit.shots : [];
-    if (!shots.length) {
-      return `<div class="sm-plan-edit__shots"></div>`;
-    }
+    if (!shots.length) return `<div class="sm-plan-edit__shots"></div>`;
 
     return `
       <div class="sm-plan-edit__shots">
@@ -802,27 +809,27 @@ function getPlanFinalVideo() {
   }
 
   function buildResultSlide(plan) {
-  const finalVideo = getPlanFinalVideo();
-  const poster = pickThumb(plan?.final?.poster, getPlanCover(plan));
+    const finalVideo = getPlanFinalVideo();
+    const poster = pickThumb(plan?.final?.poster, getPlanCover(plan));
 
-  return `
-    <section class="sm-plan-slide" data-plan-slide="0">
-      <div class="sm-plan-result">
-        <video
-          class="sm-plan-result__video"
-          id="planResultVideo"
-          autoplay
-          muted
-          playsinline
-          preload="auto"
-          poster="${escapeHtml(poster)}"
-        >
-          <source src="${escapeHtml(finalVideo)}" type="video/mp4">
-        </video>
-      </div>
-    </section>
-  `;
-}
+    return `
+      <section class="sm-plan-slide" data-plan-slide="0">
+        <div class="sm-plan-result">
+          <video
+            class="sm-plan-result__video"
+            id="planResultVideo"
+            autoplay
+            muted
+            playsinline
+            preload="auto"
+            poster="${escapeHtml(poster)}"
+          >
+            <source src="${escapeHtml(finalVideo)}" type="video/mp4">
+          </video>
+        </div>
+      </section>
+    `;
+  }
 
   function buildStepSlide(plan, step, stepIndex) {
     const shotRef = Number(step?.shot_ref || stepIndex + 1);
@@ -971,6 +978,7 @@ function getPlanFinalVideo() {
     };
   }
 
+  // ---------------- Ideal Plan Viewer ----------------
   function openPlan(plan) {
     if (!plan) return;
 
@@ -981,27 +989,52 @@ function getPlanFinalVideo() {
 
     const stepsArr = Array.isArray(plan?.steps) ? plan.steps : [];
     const totalSlides = 1 + stepsArr.length;
+
     let activeIndex = 0;
     let startX = 0;
     let deltaX = 0;
     let isPointerDown = false;
 
-    buildPlanDots(totalSlides, activeIndex);
-    setPlanModal(true);
-    planModal.classList.add("is-ready");
+    const resultVideo = $("planResultVideo");
+    const stepPlayButtons = Array.from(planTrack.querySelectorAll(".sm-plan-step__play"));
 
-   const resultVideo = $("planResultVideo");
-   const stepPlayButtons = Array.from(planTrack.querySelectorAll(".sm-plan-step__play"));
-
-    function updateSlider() {
-      planTrack.style.transform = `translateX(-${activeIndex * 100}%)`;
-      buildPlanDots(totalSlides, activeIndex);
+    function stopResultIfNeeded() {
+      if (!resultVideo) return;
+      if (activeIndex !== 0) {
+        try { resultVideo.pause(); } catch (_) {}
+      }
     }
 
-    function goTo(index) {
+    function playResultIfNeeded() {
+      if (!resultVideo) return;
+      if (activeIndex === 0) {
+        resultVideo.currentTime = resultVideo.currentTime || 0;
+        resultVideo.play().catch(() => {});
+      }
+    }
+
+    function renderDots() {
+      buildPlanDots(totalSlides, activeIndex);
+      Array.from(planDots.querySelectorAll(".sm-plan-dot")).forEach((dot) => {
+        dot.addEventListener("click", onDotClick);
+      });
+    }
+
+    function updateSlider({ animate = true } = {}) {
+      planTrack.style.transition = animate
+        ? "transform .48s cubic-bezier(.22,.61,.36,1)"
+        : "none";
+      planTrack.style.transform = `translateX(-${activeIndex * 100}%)`;
+      renderDots();
+      stopResultIfNeeded();
+      playResultIfNeeded();
+    }
+
+    function goTo(index, opts = {}) {
       const next = Math.max(0, Math.min(totalSlides - 1, Number(index || 0)));
+      if (next === activeIndex && !opts.force) return;
       activeIndex = next;
-      updateSlider();
+      updateSlider(opts);
     }
 
     function goNext() {
@@ -1012,21 +1045,26 @@ function getPlanFinalVideo() {
       if (activeIndex > 0) goTo(activeIndex - 1);
     }
 
+    function onResultEnded() {
+      goNext();
+    }
+
+    function onStepPlayClick(e) {
+      openPlanStepVideo(e.currentTarget);
+    }
+
+    function onDotClick(e) {
+      const btn = e.currentTarget;
+      const idx = Number(btn.dataset.slide || "0");
+      goTo(idx);
+    }
+
     function onPlanBackdrop() {
       closePlanModal();
     }
 
     function onPlanCloseClick(e) {
       if (e.target.closest("[data-plan-close]")) closePlanModal();
-    }
-
-    function onResultEnded() {
-      goNext();
-    }
-
-
-    function onStepPlayClick(e) {
-      openPlanStepVideo(e.currentTarget);
     }
 
     function onPointerDown(e) {
@@ -1068,6 +1106,41 @@ function getPlanFinalVideo() {
       deltaX = 0;
     }
 
+    function onKeydown(e) {
+      if (planModal.getAttribute("aria-hidden") !== "false") return;
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        goNext();
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        goPrev();
+      }
+    }
+
+    function onDesktopClickZones(e) {
+      const closeBtn = e.target.closest(".sm-plan-modal__close");
+      const dotBtn = e.target.closest(".sm-plan-dot");
+      const playBtn = e.target.closest(".sm-plan-step__play");
+      const editArea = e.target.closest(".sm-plan-step__bottom");
+      const topOverlay = e.target.closest(".sm-plan-step__overlay");
+
+      if (closeBtn || dotBtn || playBtn || editArea || topOverlay) return;
+
+      const rect = planViewport.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const leftZone = rect.width * 0.32;
+      const rightZone = rect.width * 0.68;
+
+      if (x < leftZone) {
+        goPrev();
+      } else if (x > rightZone) {
+        goNext();
+      }
+    }
+
+    setPlanModal(true);
+    planModal.classList.add("is-ready");
+
     if (resultVideo) {
       resultVideo.addEventListener("ended", onResultEnded);
       resultVideo.play().catch(() => {});
@@ -1077,16 +1150,20 @@ function getPlanFinalVideo() {
 
     planModalBackdrop.addEventListener("click", onPlanBackdrop);
     planModalDialog.addEventListener("click", onPlanCloseClick);
+    planViewport.addEventListener("click", onDesktopClickZones);
 
     planViewport.addEventListener("pointerdown", onPointerDown);
     planViewport.addEventListener("pointermove", onPointerMove);
     planViewport.addEventListener("pointerup", onPointerUp);
     planViewport.addEventListener("pointercancel", onPointerUp);
+
     planViewport.addEventListener("touchstart", onTouchStart, { passive: true });
     planViewport.addEventListener("touchmove", onTouchMove, { passive: true });
     planViewport.addEventListener("touchend", onTouchEnd, { passive: true });
 
-    updateSlider();
+    window.addEventListener("keydown", onKeydown);
+
+    updateSlider({ animate: false });
 
     planModal._cleanup = () => {
       if (resultVideo) {
@@ -1096,20 +1173,28 @@ function getPlanFinalVideo() {
 
       stepPlayButtons.forEach((btn) => btn.removeEventListener("click", onStepPlayClick));
 
+      Array.from(planDots.querySelectorAll(".sm-plan-dot")).forEach((dot) => {
+        dot.removeEventListener("click", onDotClick);
+      });
+
       planModalBackdrop.removeEventListener("click", onPlanBackdrop);
       planModalDialog.removeEventListener("click", onPlanCloseClick);
+      planViewport.removeEventListener("click", onDesktopClickZones);
 
       planViewport.removeEventListener("pointerdown", onPointerDown);
       planViewport.removeEventListener("pointermove", onPointerMove);
       planViewport.removeEventListener("pointerup", onPointerUp);
       planViewport.removeEventListener("pointercancel", onPointerUp);
+
       planViewport.removeEventListener("touchstart", onTouchStart);
       planViewport.removeEventListener("touchmove", onTouchMove);
       planViewport.removeEventListener("touchend", onTouchEnd);
+
+      window.removeEventListener("keydown", onKeydown);
     };
   }
 
-  // ---------------- Grid click handler ----------------
+  // ---------------- Grid click ----------------
   grid.addEventListener("click", async (e) => {
     const card = e.target.closest(".card, .cardPlan");
     if (!card) return;
@@ -1161,7 +1246,7 @@ function getPlanFinalVideo() {
     }
   }
 
-  // ---------------- INIT ----------------
+  // ---------------- Init ----------------
   (async () => {
     if (backBtn) backBtn.disabled = true;
 
