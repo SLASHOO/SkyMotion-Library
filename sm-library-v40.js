@@ -8,8 +8,8 @@
 
 (() => {
   "use strict";
-  if (window.__SM_LIBRARY_V1_CLEAN_V4__) return;
-  window.__SM_LIBRARY_V1_CLEAN_V4__ = true;
+  if (window.__SM_LIBRARY_V1_CLEAN_V5__) return;
+  window.__SM_LIBRARY_V1_CLEAN_V5__ = true;
 
   const FALLBACK_THUMB = "https://skymotion-cdn.b-cdn.net/thumb.jpg";
   const CDN_INDEX_URL = "https://skymotion-cdn.b-cdn.net/videos_index.json?v=" + Date.now();
@@ -103,6 +103,13 @@
 
   function getVideoId(v) {
     return v?.id || v?.slug || v?.videoUrl || v?.video_url || ((v?.title || "") + "|" + (v?.duration || ""));
+  }
+
+  function cssEscape(value) {
+    if (window.CSS && typeof window.CSS.escape === "function") {
+      return window.CSS.escape(String(value));
+    }
+    return String(value).replace(/"/g, '\\"');
   }
 
   // ---------------- Memberstack ----------------
@@ -529,12 +536,20 @@
     return card;
   }
 
+  function renderEmptyCard(message) {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.style.padding = "14px";
+    card.textContent = message;
+    return card;
+  }
+
   function renderResults() {
     grid.innerHTML = "";
     const slice = filtered.slice(0, visibleCount);
 
     if (!slice.length) {
-      grid.innerHTML = `<div class="card" style="padding:14px">No results.</div>`;
+      grid.appendChild(renderEmptyCard("No results."));
       if (moreBtn) moreBtn.style.display = "none";
       safeText(matchCount, "0");
       if (resultsHead) resultsHead.style.display = "none";
@@ -563,7 +578,7 @@
   function syncCardSaveUI(video) {
     const id = getVideoId(video);
     const saved = isSaved(id);
-    const sel = `.sm-save[data-save-id="${CSS.escape(String(id))}"]`;
+    const sel = `.sm-save[data-save-id="${cssEscape(id)}"]`;
     const btn = grid.querySelector(sel);
     if (btn) {
       btn.classList.toggle("isSaved", saved);
@@ -701,7 +716,11 @@
     }
 
     if (isPlan(item)) {
-      window.dispatchEvent(new CustomEvent("sm:open-plan", { detail: item }));
+      if (window.SMPlanModal && typeof window.SMPlanModal.open === "function") {
+        window.SMPlanModal.open(item);
+      } else {
+        console.warn("[SM] window.SMPlanModal.open is not available");
+      }
       return;
     }
 
@@ -727,7 +746,8 @@
     } catch (e) {
       console.error("[SM] loadVideos error:", e);
       safeText(matchCount, "—");
-      grid.innerHTML = `<div class="card" style="padding:14px">Failed to load videos.</div>`;
+      grid.innerHTML = "";
+      grid.appendChild(renderEmptyCard("Failed to load videos."));
       if (moreBtn) moreBtn.style.display = "none";
       if (resultsHead) resultsHead.style.display = "none";
     }
