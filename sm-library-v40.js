@@ -15,7 +15,7 @@
 
   const FALLBACK_THUMB = "https://skymotion-cdn.b-cdn.net/thumb.jpg";
   const CDN_INDEX_URL =
-    "https://skymotion-cdn.b-cdn.net/videos_index.json_v1?v=" + Date.now();
+    "https://skymotion-cdn.b-cdn.net/videos_index_v1.json?v=" + Date.now();
 
   const API_BASE = String(window.SM_API_BASE || "https://skymotion.onrender.com").replace(/\/$/, "");
   const $ = (id) => document.getElementById(id);
