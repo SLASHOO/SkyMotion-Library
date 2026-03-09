@@ -721,7 +721,84 @@ if (missing.length) {
       try { player && player.pause(); } catch (_) {}
     };
   }
+    // ---------------- External move-player bridge ----------------
+  window.addEventListener("sm:open-move-player", (e) => {
+    const move = e.detail?.move;
+    if (!move) return;
 
+    const directUrl = normalizeUrl(move?.videoUrl || move?.video_url || "");
+    if (!directUrl) return;
+
+    const idx = filtered.findIndex(
+      (x) => !isPlan(x) && String(getVideoId(x)) === String(getVideoId(move))
+    );
+
+    if (idx >= 0) {
+      openPlayer(idx);
+      return;
+    }
+
+    try { modal._cleanup && modal._cleanup(); } catch (_) {}
+    modal._cleanup = null;
+
+    buildVideoPlayer({
+      id: move?.id || directUrl,
+      title: move?.title || "Move video",
+      videoUrl: directUrl,
+      video_url: directUrl,
+      thumb: move?.thumb || FALLBACK_THUMB,
+      duration: move?.duration || ""
+    });
+
+    setModal(true);
+
+    const player = $("playerVideo");
+    const closeBtn = $("playerClose");
+    const prevBtn = $("prevVideoBtn");
+    const nextBtn = $("nextVideoBtn");
+    const back10 = $("skipBackBtn");
+    const fwd10 = $("skipFwdBtn");
+    const fsBtn = $("fsBtn");
+    const saveMoveBtn = $("saveMoveBtn");
+
+    const onBackdrop = () => closeModal();
+
+    if (closeBtn) closeBtn.addEventListener("click", closeModal);
+    if (prevBtn) prevBtn.style.display = "none";
+    if (nextBtn) nextBtn.style.display = "none";
+    if (saveMoveBtn) saveMoveBtn.style.display = "none";
+
+    if (back10) {
+      back10.addEventListener("click", () => {
+        if (!player) return;
+        player.currentTime = Math.max(0, (player.currentTime || 0) - 10);
+      });
+    }
+
+    if (fwd10) {
+      fwd10.addEventListener("click", () => {
+        if (!player) return;
+        player.currentTime = Math.min(player.duration || 999999, (player.currentTime || 0) + 10);
+      });
+    }
+
+    if (fsBtn) {
+      fsBtn.addEventListener("click", async () => {
+        try {
+          if (!document.fullscreenElement) await modal.requestFullscreen();
+          else await document.exitFullscreen();
+        } catch (_) {}
+      });
+    }
+
+    modalBackdrop.addEventListener("click", onBackdrop);
+    player && player.play().catch(() => {});
+
+    modal._cleanup = () => {
+      modalBackdrop.removeEventListener("click", onBackdrop);
+      try { player && player.pause(); } catch (_) {}
+    };
+  });
   // ---------------- Grid click ----------------
   grid.addEventListener("click", async (e) => {
     const card = e.target.closest(".card, .cardPlan");
