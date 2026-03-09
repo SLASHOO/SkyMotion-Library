@@ -4,12 +4,13 @@
   - results grid
   - old fullscreen video modal
   - external plan modal hook via window.SMPlanModal.open(item)
+  - init does NOT block on Memberstack
 ========================================================= */
 
 (() => {
   "use strict";
-  if (window.__SM_LIBRARY_CORE_PROD__) return;
-  window.__SM_LIBRARY_CORE_PROD__ = true;
+  if (window.__SM_LIBRARY_CORE_PROD_V2__) return;
+  window.__SM_LIBRARY_CORE_PROD_V2__ = true;
 
   const FALLBACK_THUMB = "https://skymotion-cdn.b-cdn.net/thumb.jpg";
   const CDN_INDEX_URL = "https://skymotion-cdn.b-cdn.net/videos_index.json?v=" + Date.now();
@@ -19,7 +20,7 @@
   const scope = $("sm-library-scope");
   if (!scope) return;
 
-  // DOM
+  // ---------------- DOM ----------------
   const openAssistantBtn = $("openAssistantBtn");
   const closeAssistantBtn = $("closeAssistantBtn");
   const assistantBackdropEl = $("assistantBackdrop");
@@ -39,12 +40,14 @@
 
   if (
     !assistant || !chat || !grid || !matchCount || !resetBtn || !backBtn ||
-    !modal || !modalBackdrop || !modalContent || !moreBtn || !resultsHead
+    !moreBtn || !resultsHead ||
+    !modal || !modalBackdrop || !modalContent
   ) {
     console.warn("[SM] Missing required library elements.");
     return;
   }
 
+  // ---------------- Helpers ----------------
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   function escapeHtml(str) {
@@ -110,7 +113,7 @@
     });
   }
 
-  // Memberstack
+  // ---------------- Memberstack ----------------
   let _memberCache = null;
   let _memberCacheAt = 0;
 
@@ -173,7 +176,7 @@
     return payload;
   }
 
-  // saved moves
+  // ---------------- Saved moves ----------------
   let savedCache = [];
 
   async function hydrateSavedCache() {
@@ -242,7 +245,7 @@
     return true;
   }
 
-  // locks
+  // ---------------- Locks ----------------
   const locks = { drawer: false, modal: false };
 
   function applyOverflow() {
@@ -252,7 +255,7 @@
     document.body.style.overflow = lock ? "hidden" : "";
   }
 
-  // drawer
+  // ---------------- Drawer ----------------
   function isDrawerMode() {
     return window.matchMedia("(max-width: 900px)").matches;
   }
@@ -284,7 +287,7 @@
     }
   });
 
-  // old fullscreen modal
+  // ---------------- Old fullscreen modal ----------------
   function setModal(open) {
     modal.setAttribute("aria-hidden", open ? "false" : "true");
     locks.modal = !!open;
@@ -311,7 +314,7 @@
     }
   });
 
-  // chat
+  // ---------------- Chat ----------------
   let isBusy = false;
   const history = [];
 
@@ -459,7 +462,7 @@
     renderOptions();
   });
 
-  // cards
+  // ---------------- Cards ----------------
   function bookmarkSvg() {
     return `<svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M6.5 3.5h11c.83 0 1.5.67 1.5 1.5v16.1c0 .78-.86 1.26-1.53.86L12 19.35 6.53 21.96C5.86 22.26 5 21.78 5 21.1V5c0-.83.67-1.5 1.5-1.5z"></path>
@@ -588,7 +591,7 @@
     }
   }
 
-  // fullscreen video modal
+  // ---------------- Fullscreen player ----------------
   function buildVideoPlayer(video) {
     const saved = isSaved(getVideoId(video));
     const src = normalizeUrl(video?.videoUrl || video?.video_url);
@@ -700,7 +703,7 @@
     };
   }
 
-  // grid click
+  // ---------------- Grid click ----------------
   grid.addEventListener("click", async (e) => {
     const card = e.target.closest(".card, .cardPlan");
     if (!card) return;
@@ -735,7 +738,7 @@
     openPlayer(idx);
   });
 
-  // load items
+  // ---------------- Load items ----------------
   async function loadItems() {
     try {
       safeText(matchCount, "Loading…");
@@ -762,17 +765,26 @@
     }
   }
 
-  // init
+  // ---------------- Init ----------------
   (async () => {
     backBtn.disabled = true;
 
-    await getMember(12000).catch(() => null);
-    await hydrateSavedCache();
-
+    // UI стартує одразу
     await addBotTyped("Hi. Let’s browse moves and cinematic plans.");
     await addBotTyped(steps[0].text);
     renderOptions();
 
+    // Контент вантажимо одразу
     await loadItems();
+
+    // Memberstack / saved moves — фоном, без блокування UI
+    getMember(12000)
+      .then(() => hydrateSavedCache())
+      .then(() => {
+        if (filtered.length) renderResults();
+      })
+      .catch((e) => {
+        console.warn("[SM] member/saved bootstrap skipped", e);
+      });
   })();
 })();
