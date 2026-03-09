@@ -1,12 +1,3 @@
-достатньо почистив?
-
-/* =========================================================
-  SKYMOTION — LIBRARY v1 (STANDALONE) CLEAN JS
-  - Plans + Moves mixed by default
-  - OLD #modal = fullscreen video player
-  - NEW #planModal = hard reset plan viewer
-  - Scoped. Webflow-safe.
-========================================================= */
 
 (() => {
   "use strict";
