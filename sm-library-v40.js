@@ -302,12 +302,16 @@ if (missing.length) {
   }
 
   function closeModal() {
-    try { modal._cleanup && modal._cleanup(); } catch (_) {}
-    modal._cleanup = null;
-    setModal(false);
-    modalContent.innerHTML = "";
-    modal.classList.remove("isPlan");
-  }
+  try { modal._cleanup && modal._cleanup(); } catch (_) {}
+  modal._cleanup = null;
+  setModal(false);
+  modalContent.innerHTML = "";
+  modal.classList.remove("isPlan");
+
+  setTimeout(() => {
+    window.dispatchEvent(new CustomEvent("sm:reopen-plan-after-player"));
+  }, 20);
+}
 
   // ---------------- ESC ----------------
   window.addEventListener("keydown", (e) => {
