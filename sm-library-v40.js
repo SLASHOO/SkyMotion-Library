@@ -931,33 +931,32 @@
   });
 
   // ---------------- Load JSON ----------------
-  async function loadItems() {
-    try {
-      safeText(matchCount, "Loading…");
+ async function loadItems() {
+  try {
+    safeText(matchCount, "Loading…");
 
-      const res = await fetch(CDN_INDEX_URL, {
-        cache: "no-store",
-        headers: { "Cache-Control": "no-cache" }
-      });
+    const res = await fetch(CDN_INDEX_URL, {
+      cache: "no-store"
+    });
 
-      if (!res.ok) throw new Error("HTTP " + res.status);
+    if (!res.ok) throw new Error("HTTP " + res.status);
 
-      const json = await res.json();
-      const items = Array.isArray(json) ? json : [];
+    const json = await res.json();
+    const items = Array.isArray(json) ? json : [];
 
-      const plans = items.filter(isPlan);
-      const moves = items.filter((x) => !isPlan(x));
+    const plans = items.filter(isPlan);
+    const moves = items.filter((x) => !isPlan(x));
 
-      allItems = [...plans, ...moves];
-      applyFilters();
-    } catch (e) {
-      console.error("[SM] loadVideos error:", e);
-      safeText(matchCount, "—");
-      grid.innerHTML = `<div class="card" style="padding:14px">Failed to load videos.</div>`;
-      if (moreBtn) moreBtn.style.display = "none";
-      if (resultsHead) resultsHead.style.display = "none";
-    }
+    allItems = [...plans, ...moves];
+    applyFilters();
+  } catch (e) {
+    console.error("[SM] loadVideos error:", e);
+    safeText(matchCount, "—");
+    grid.innerHTML = `<div class="card" style="padding:14px">Failed to load videos.</div>`;
+    if (moreBtn) moreBtn.style.display = "none";
+    if (resultsHead) resultsHead.style.display = "none";
   }
+}
 
   // ---------------- Init ----------------
   (async () => {
