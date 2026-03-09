@@ -42,14 +42,25 @@
   const modalBackdrop = $("modalBackdrop");
   const modalContent = $("modalContent");
 
-  if (
-    !assistant || !chat || !grid || !matchCount || !resetBtn ||
-    !modal || !modalBackdrop || !modalContent
-  ) {
-    console.warn("[SM] Missing required elements. Stop.");
-    return;
-  }
+  const required = {
+  assistant,
+  chat,
+  grid,
+  matchCount,
+  resetBtn,
+  modal,
+  modalBackdrop,
+  modalContent,
+};
 
+const missing = Object.entries(required)
+  .filter(([, el]) => !el)
+  .map(([name]) => name);
+
+if (missing.length) {
+  console.warn("[SM] Missing required elements:", missing);
+  return;
+}
   // ---------------- Helpers ----------------
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
