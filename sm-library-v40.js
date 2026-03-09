@@ -6,6 +6,8 @@
   - Plan cards now dispatch event to external plan viewer
   - Robust image fallback
   - Scoped. Webflow-safe.
+  - FILTERS RESTORED
+  - FASTER INITIAL LOAD
 ========================================================= */
 
 (() => {
@@ -37,30 +39,30 @@
   const moreBtn = $("moreBtn");
   const resultsHead = $("resultsHead");
 
-  // OLD fullscreen video modal only
   const modal = $("modal");
   const modalBackdrop = $("modalBackdrop");
   const modalContent = $("modalContent");
 
   const required = {
-  assistant,
-  chat,
-  grid,
-  matchCount,
-  resetBtn,
-  modal,
-  modalBackdrop,
-  modalContent,
-};
+    assistant,
+    chat,
+    grid,
+    matchCount,
+    resetBtn,
+    modal,
+    modalBackdrop,
+    modalContent,
+  };
 
-const missing = Object.entries(required)
-  .filter(([, el]) => !el)
-  .map(([name]) => name);
+  const missing = Object.entries(required)
+    .filter(([, el]) => !el)
+    .map(([name]) => name);
 
-if (missing.length) {
-  console.warn("[SM] Missing required elements:", missing);
-  return;
-}
+  if (missing.length) {
+    console.warn("[SM] Missing required elements:", missing);
+    return;
+  }
+
   // ---------------- Helpers ----------------
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -118,6 +120,56 @@ if (missing.length) {
         { once: true }
       );
     });
+  }
+
+  function getVideoId(v) {
+    return v?.id || v?.slug || v?.videoUrl || v?.video_url || ((v?.title || "") + "|" + (v?.duration || ""));
+  }
+
+  function hasMatch(itemValue, selectedValue) {
+    if (!selectedValue) return true;
+    const arr = Array.isArray(itemValue) ? itemValue.map((x) => String(x).toLowerCase()) : [];
+    return arr.includes(String(selectedValue).toLowerCase());
+  }
+
+  function normalizeFilterValue(stepKey, label) {
+    if (!label) return "";
+
+    const map = {
+      env: {
+        "Open area": "open",
+        "City / Urban": "urban",
+        "Forest": "forest",
+        "Near objects": "near_objects",
+        "Tight space": "tight_space"
+      },
+      risk: {
+        "Safe & calm": "calm",
+        "Some risks": "some_risks",
+        "No aggressive moves": "no_aggressive_moves"
+      },
+      subject: {
+        "Person": "person",
+        "Car / Bike": "car_bike",
+        "Building": "building",
+        "Landscape": "landscape",
+        "Atmosphere": "atmosphere"
+      },
+      pilot: {
+        "Playing safe": "safe",
+        "Normal": "normal",
+        "Ready to experiment": "experiment"
+      },
+      mood: {
+        "Smooth": "smooth",
+        "Epic": "epic",
+        "Dynamic": "dynamic",
+        "Tense": "tense",
+        "Wow": "wow"
+      }
+    };
+
+    return map?.[stepKey]?.[label] || String(label).toLowerCase();
   }
 
   // ---------------- Memberstack (cached) ----------------
@@ -181,10 +233,6 @@ if (missing.length) {
 
   // ---------------- Saved moves ----------------
   let savedCache = [];
-
-  function getVideoId(v) {
-    return v?.id || v?.slug || v?.videoUrl || v?.video_url || ((v?.title || "") + "|" + (v?.duration || ""));
-  }
 
   async function hydrateSavedCache() {
     try {
@@ -302,16 +350,16 @@ if (missing.length) {
   }
 
   function closeModal() {
-  try { modal._cleanup && modal._cleanup(); } catch (_) {}
-  modal._cleanup = null;
-  setModal(false);
-  modalContent.innerHTML = "";
-  modal.classList.remove("isPlan");
+    try { modal._cleanup && modal._cleanup(); } catch (_) {}
+    modal._cleanup = null;
+    setModal(false);
+    modalContent.innerHTML = "";
+    modal.classList.remove("isPlan");
 
-  setTimeout(() => {
-    window.dispatchEvent(new CustomEvent("sm:reopen-plan-after-player"));
-  }, 20);
-}
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent("sm:reopen-plan-after-player"));
+    }, 20);
+  }
 
   // ---------------- ESC ----------------
   window.addEventListener("keydown", (e) => {
@@ -391,7 +439,24 @@ if (missing.length) {
   let visibleCount = 12;
 
   function applyFilters() {
-    filtered = allItems.slice();
+    const selected = {
+      env: normalizeFilterValue("env", state.env),
+      risk: normalizeFilterValue("risk", state.risk),
+      subject: normalizeFilterValue("subject", state.subject),
+      pilot: normalizeFilterValue("pilot", state.pilot),
+      mood: normalizeFilterValue("mood", state.mood),
+    };
+
+    filtered = allItems.filter((item) => {
+      return (
+        hasMatch(item.env, selected.env) &&
+        hasMatch(item.risk, selected.risk) &&
+        hasMatch(item.subject, selected.subject) &&
+        hasMatch(item.pilot, selected.pilot) &&
+        hasMatch(item.mood, selected.mood)
+      );
+    });
+
     safeText(matchCount, String(filtered.length));
     visibleCount = 12;
     renderResults();
@@ -470,7 +535,7 @@ if (missing.length) {
     await addBotTyped("Hi. Let’s browse moves and cinematic plans.");
     await addBotTyped(steps[0].text);
 
-    if (allItems.length) applyFilters();
+    applyFilters();
     renderOptions();
   });
 
@@ -514,87 +579,86 @@ if (missing.length) {
   }
 
   function renderPlanCard(p, i) {
-  const stepsArr = Array.isArray(p?.steps) ? p.steps : [];
-  const titleRaw = p?.title || "Cinematic plan";
+    const stepsArr = Array.isArray(p?.steps) ? p.steps : [];
+    const titleRaw = p?.title || "Cinematic plan";
 
-  const cover = pickThumb(
-    p?.thumb?.a,
-    p?.thumb_a,
-    stepsArr?.[0]?.thumb,
-    stepsArr?.[0]?.poster,
-    p?.thumb,
-    FALLBACK_THUMB
-  );
+    const cover = pickThumb(
+      p?.thumb?.a,
+      p?.thumb_a,
+      stepsArr?.[0]?.thumb,
+      stepsArr?.[0]?.poster,
+      p?.thumb,
+      FALLBACK_THUMB
+    );
 
-  const shotsCount =
-    Number(p?.meta?.shots_count) ||
-    Number(p?.shots_count) ||
-    stepsArr.length ||
-    (Array.isArray(p?.edit?.shots) ? p.edit.shots.length : 0) ||
-    0;
+    const shotsCount =
+      Number(p?.meta?.shots_count) ||
+      Number(p?.shots_count) ||
+      stepsArr.length ||
+      (Array.isArray(p?.edit?.shots) ? p.edit.shots.length : 0) ||
+      0;
 
-  const clipSeconds =
-    Number(p?.final_clip_duration_s) ||
-    Number(p?.final?.duration_s) ||
-    0;
+    const clipSeconds =
+      Number(p?.final_clip_duration_s) ||
+      Number(p?.final?.duration_s) ||
+      0;
 
-  const clipText = clipSeconds ? formatSeconds(clipSeconds) : "";
+    const clipText = clipSeconds ? formatSeconds(clipSeconds) : "";
 
-  const shootTimeMin =
-    Number(p?.meta?.shoot_time_min) ||
-    Number(p?.shoot_time_min) ||
-    0;
+    const shootTimeMin =
+      Number(p?.meta?.shoot_time_min) ||
+      Number(p?.shoot_time_min) ||
+      0;
 
-  const difficulty =
-    p?.meta?.difficulty ||
-    p?.difficulty ||
-    "Beginner";
+    const difficulty =
+      p?.meta?.difficulty ||
+      p?.difficulty ||
+      "Beginner";
 
-  const metaParts = [];
-  if (shootTimeMin) metaParts.push(`${shootTimeMin} min shoot`);
-  if (difficulty) metaParts.push(difficulty);
-  if (shotsCount) metaParts.push(`${shotsCount} shots`);
+    const metaParts = [];
+    if (shootTimeMin) metaParts.push(`${shootTimeMin} min shoot`);
+    if (difficulty) metaParts.push(difficulty);
+    if (shotsCount) metaParts.push(`${shotsCount} shots`);
 
-  const metaText = metaParts.join(" • ");
+    const metaText = metaParts.join(" • ");
 
-  const card = document.createElement("div");
-  card.className = "cardPlan";
-  card.dataset.index = String(i);
-  card.dataset.kind = "plan";
-  card.dataset.itemId = String(p?.id || "");
+    const card = document.createElement("div");
+    card.className = "cardPlan";
+    card.dataset.index = String(i);
+    card.dataset.kind = "plan";
+    card.dataset.itemId = String(p?.id || "");
 
-  card.innerHTML = `
-    <div class="planMedia">
-      <img class="planImg" src="${cover}" alt="${escapeHtml(titleRaw)}" loading="lazy">
+    card.innerHTML = `
+      <div class="planMedia">
+        <img class="planImg" src="${cover}" alt="${escapeHtml(titleRaw)}" loading="lazy">
 
-      <div class="planPills">
-        ${clipText ? `<span class="pill">${escapeHtml(clipText)}</span>` : ``}
-        ${shotsCount ? `<span class="pill">${escapeHtml(String(shotsCount))} shots</span>` : ``}
-        <span class="pill pill--plan">Plan</span>
+        <div class="planPills">
+          ${clipText ? `<span class="pill">${escapeHtml(clipText)}</span>` : ``}
+          ${shotsCount ? `<span class="pill">${escapeHtml(String(shotsCount))} shots</span>` : ``}
+          <span class="pill pill--plan">Plan</span>
+        </div>
       </div>
-    </div>
 
-    <div class="planCaption">Cinematic Plan</div>
+      <div class="planCaption">Cinematic Plan</div>
 
-    <div class="planBubble">
-      <h3 class="planName">${escapeHtml(titleRaw)}</h3>
-      <div class="planMeta">${escapeHtml(metaText)}</div>
-    </div>
-  `;
+      <div class="planBubble">
+        <h3 class="planName">${escapeHtml(titleRaw)}</h3>
+        <div class="planMeta">${escapeHtml(metaText)}</div>
+      </div>
+    `;
 
-  const img = card.querySelector(".planImg");
-  if (img) {
-    img.addEventListener("error", () => {
-      if (img.dataset.smFallbackApplied === "1") return;
-      img.dataset.smFallbackApplied = "1";
-      img.src = FALLBACK_THUMB;
-    });
+    const img = card.querySelector(".planImg");
+    if (img) {
+      img.addEventListener("error", () => {
+        if (img.dataset.smFallbackApplied === "1") return;
+        img.dataset.smFallbackApplied = "1";
+        img.src = FALLBACK_THUMB;
+      });
+    }
+
+    return card;
   }
 
-  return card;
-}
-
-  
   function renderResults() {
     grid.innerHTML = "";
     const slice = filtered.slice(0, visibleCount);
@@ -750,7 +814,8 @@ if (missing.length) {
       try { player && player.pause(); } catch (_) {}
     };
   }
-    // ---------------- External move-player bridge ----------------
+
+  // ---------------- External move-player bridge ----------------
   window.addEventListener("sm:open-move-player", (e) => {
     const move = e.detail?.move;
     if (!move) return;
@@ -828,6 +893,7 @@ if (missing.length) {
       try { player && player.pause(); } catch (_) {}
     };
   });
+
   // ---------------- Grid click ----------------
   grid.addEventListener("click", async (e) => {
     const card = e.target.closest(".card, .cardPlan");
@@ -868,7 +934,12 @@ if (missing.length) {
   async function loadItems() {
     try {
       safeText(matchCount, "Loading…");
-      const res = await fetch(CDN_INDEX_URL, { cache: "no-store" });
+
+      const res = await fetch(CDN_INDEX_URL, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" }
+      });
+
       if (!res.ok) throw new Error("HTTP " + res.status);
 
       const json = await res.json();
@@ -879,7 +950,6 @@ if (missing.length) {
 
       allItems = [...plans, ...moves];
       applyFilters();
-      renderResults();
     } catch (e) {
       console.error("[SM] loadVideos error:", e);
       safeText(matchCount, "—");
@@ -893,13 +963,26 @@ if (missing.length) {
   (async () => {
     if (backBtn) backBtn.disabled = true;
 
-    await getMember(12000).catch(() => null);
-    await hydrateSavedCache();
+    // content first
+    loadItems();
 
-    await addBotTyped("Hi. Let’s browse moves and cinematic plans.");
-    await addBotTyped(steps[0].text);
-    renderOptions();
+    // assistant UI quickly
+    addBotTyped("Hi. Let’s browse moves and cinematic plans.");
+    setTimeout(() => {
+      addBotTyped(steps[0].text).then(() => {
+        renderOptions();
+      });
+    }, 120);
 
-    await loadItems();
+    // auth + saved moves in background
+    getMember(12000)
+      .then((member) => {
+        if (!member?.id) return null;
+        return hydrateSavedCache();
+      })
+      .then(() => {
+        renderResults();
+      })
+      .catch(() => null);
   })();
 })();
