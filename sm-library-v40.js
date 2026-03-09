@@ -545,8 +545,17 @@ if (missing.length) {
     Number(p?.shoot_time_min) ||
     0;
 
-  const shootTimeText = shootTimeMin ? `${shootTimeMin} min shoot` : "—";
-  const difficulty = p?.meta?.difficulty || p?.difficulty || "Beginner";
+  const difficulty =
+    p?.meta?.difficulty ||
+    p?.difficulty ||
+    "Beginner";
+
+  const metaParts = [];
+  if (shootTimeMin) metaParts.push(`${shootTimeMin} min shoot`);
+  if (difficulty) metaParts.push(difficulty);
+  if (shotsCount) metaParts.push(`${shotsCount} shots`);
+
+  const metaText = metaParts.join(" • ");
 
   const card = document.createElement("div");
   card.className = "cardPlan";
@@ -569,23 +578,7 @@ if (missing.length) {
 
     <div class="planBubble">
       <h3 class="planName">${escapeHtml(titleRaw)}</h3>
-
-      <div class="planStats">
-        <div class="planStat">
-          <span class="planStat__label">Shoot time</span>
-          <span class="planStat__value">${escapeHtml(shootTimeText)}</span>
-        </div>
-
-        <div class="planStat">
-          <span class="planStat__label">Difficulty</span>
-          <span class="planStat__value">${escapeHtml(difficulty)}</span>
-        </div>
-
-        <div class="planStat">
-          <span class="planStat__label">Shots</span>
-          <span class="planStat__value">${escapeHtml(String(shotsCount || "—"))}</span>
-        </div>
-      </div>
+      <div class="planMeta">${escapeHtml(metaText)}</div>
     </div>
   `;
 
@@ -600,6 +593,8 @@ if (missing.length) {
 
   return card;
 }
+
+  
   function renderResults() {
     grid.innerHTML = "";
     const slice = filtered.slice(0, visibleCount);
