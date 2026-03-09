@@ -1,15 +1,15 @@
 /* =========================================================
-  SKYMOTION — LIBRARY v1 (STANDALONE) CLEAN JS
-  - Plans + Moves mixed by default
-  - OLD #modal = fullscreen video player
-  - PLAN VIEWER moved to separate embed
-  - Scoped. Webflow-safe.
+  SKYMOTION — LIBRARY CORE (PRODUCTION)
+  - assistant
+  - results grid
+  - old fullscreen video modal
+  - external plan modal hook via window.SMPlanModal.open(item)
 ========================================================= */
 
 (() => {
   "use strict";
-  if (window.__SM_LIBRARY_V1_CLEAN_V5__) return;
-  window.__SM_LIBRARY_V1_CLEAN_V5__ = true;
+  if (window.__SM_LIBRARY_CORE_PROD__) return;
+  window.__SM_LIBRARY_CORE_PROD__ = true;
 
   const FALLBACK_THUMB = "https://skymotion-cdn.b-cdn.net/thumb.jpg";
   const CDN_INDEX_URL = "https://skymotion-cdn.b-cdn.net/videos_index.json?v=" + Date.now();
@@ -19,7 +19,7 @@
   const scope = $("sm-library-scope");
   if (!scope) return;
 
-  // ---------------- DOM ----------------
+  // DOM
   const openAssistantBtn = $("openAssistantBtn");
   const closeAssistantBtn = $("closeAssistantBtn");
   const assistantBackdropEl = $("assistantBackdrop");
@@ -33,20 +33,18 @@
   const moreBtn = $("moreBtn");
   const resultsHead = $("resultsHead");
 
-  // old fullscreen modal
   const modal = $("modal");
   const modalBackdrop = $("modalBackdrop");
   const modalContent = $("modalContent");
 
   if (
-    !assistant || !chat || !grid || !matchCount || !resetBtn ||
-    !modal || !modalBackdrop || !modalContent
+    !assistant || !chat || !grid || !matchCount || !resetBtn || !backBtn ||
+    !modal || !modalBackdrop || !modalContent || !moreBtn || !resultsHead
   ) {
-    console.warn("[SM] Missing required elements.");
+    console.warn("[SM] Missing required library elements.");
     return;
   }
 
-  // ---------------- Helpers ----------------
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   function escapeHtml(str) {
@@ -58,13 +56,9 @@
       .replaceAll("'", "&#039;");
   }
 
-  function safeText(el, t) {
-    if (el) el.textContent = String(t ?? "");
-  }
-
   function normalizeUrl(u) {
     const s = String(u ?? "").trim();
-    return s ? s : "";
+    return s || "";
   }
 
   function pickThumb(...candidates) {
@@ -83,22 +77,12 @@
     return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `0:${String(s).padStart(2, "0")}`;
   }
 
-  function isPlan(x) {
-    return String(x?.kind || "").toLowerCase() === "plan";
+  function safeText(el, text) {
+    if (el) el.textContent = String(text ?? "");
   }
 
-  function attachImgFallback(root) {
-    if (!root) return;
-    root.querySelectorAll("img").forEach((img) => {
-      const hasSrc = normalizeUrl(img.getAttribute("src"));
-      if (!hasSrc) img.src = FALLBACK_THUMB;
-
-      img.addEventListener("error", () => {
-        if (img.dataset.smFallbackApplied === "1") return;
-        img.dataset.smFallbackApplied = "1";
-        img.src = FALLBACK_THUMB;
-      }, { once: true });
-    });
+  function isPlan(item) {
+    return String(item?.kind || "").toLowerCase() === "plan";
   }
 
   function getVideoId(v) {
@@ -109,10 +93,24 @@
     if (window.CSS && typeof window.CSS.escape === "function") {
       return window.CSS.escape(String(value));
     }
-    return String(value).replace(/"/g, '\\"');
+    return String(value).replace(/["\\]/g, "\\$&");
   }
 
-  // ---------------- Memberstack ----------------
+  function attachImgFallback(root) {
+    if (!root) return;
+    root.querySelectorAll("img").forEach((img) => {
+      const src = normalizeUrl(img.getAttribute("src"));
+      if (!src) img.src = FALLBACK_THUMB;
+
+      img.addEventListener("error", () => {
+        if (img.dataset.smFallbackApplied === "1") return;
+        img.dataset.smFallbackApplied = "1";
+        img.src = FALLBACK_THUMB;
+      }, { once: true });
+    });
+  }
+
+  // Memberstack
   let _memberCache = null;
   let _memberCacheAt = 0;
 
@@ -120,8 +118,8 @@
     const now = Date.now();
     if (_memberCache && now - _memberCacheAt < 15000) return _memberCache;
 
-    const t0 = Date.now();
-    while (Date.now() - t0 < timeout) {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
       const ms = window.$memberstackDom || window.$memberstack;
       const fn = ms?.getCurrentMember || ms?.getCurrentUser;
       if (typeof fn === "function") {
@@ -155,21 +153,27 @@
       headers.set("Content-Type", "application/json");
     }
 
-    const r = await fetch(API_BASE + path, { method: opts.method || "GET", ...opts, headers });
-    const ct = (r.headers.get("content-type") || "").toLowerCase();
-    const isJson = ct.includes("application/json");
-    const payload = isJson ? await r.json().catch(() => null) : await r.text().catch(() => null);
+    const res = await fetch(API_BASE + path, {
+      method: opts.method || "GET",
+      ...opts,
+      headers
+    });
 
-    if (!r.ok) {
-      const e = new Error("HTTP_" + r.status);
-      e.status = r.status;
-      e.payload = payload;
-      throw e;
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
+    const isJson = ct.includes("application/json");
+    const payload = isJson ? await res.json().catch(() => null) : await res.text().catch(() => null);
+
+    if (!res.ok) {
+      const err = new Error("HTTP_" + res.status);
+      err.status = res.status;
+      err.payload = payload;
+      throw err;
     }
+
     return payload;
   }
 
-  // ---------------- Saved moves ----------------
+  // saved moves
   let savedCache = [];
 
   async function hydrateSavedCache() {
@@ -182,11 +186,11 @@
         : Array.isArray(data?.moves) ? data.moves
         : [];
 
-      savedCache = (list || [])
+      savedCache = list
         .map((x) => ({
           ...x,
           id: x?.id || x?.video_id || x?.slug || x?.videoUrl || x?.video_url || "",
-          videoUrl: x?.videoUrl || x?.video_url || "",
+          videoUrl: x?.videoUrl || x?.video_url || ""
         }))
         .filter((x) => x.id);
     } catch (e) {
@@ -226,7 +230,10 @@
     };
 
     try {
-      await api(`/v1/saved-moves`, { method: "POST", body: JSON.stringify(payload) });
+      await api(`/v1/saved-moves`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
     } catch (e) {
       console.warn("[SM] save failed", e?.status, e?.payload || e);
     }
@@ -235,7 +242,7 @@
     return true;
   }
 
-  // ---------------- Locks ----------------
+  // locks
   const locks = { drawer: false, modal: false };
 
   function applyOverflow() {
@@ -245,7 +252,7 @@
     document.body.style.overflow = lock ? "hidden" : "";
   }
 
-  // ---------------- Drawer ----------------
+  // drawer
   function isDrawerMode() {
     return window.matchMedia("(max-width: 900px)").matches;
   }
@@ -277,7 +284,7 @@
     }
   });
 
-  // ---------------- Old modal helpers ----------------
+  // old fullscreen modal
   function setModal(open) {
     modal.setAttribute("aria-hidden", open ? "false" : "true");
     locks.modal = !!open;
@@ -304,15 +311,15 @@
     }
   });
 
-  // ---------------- Chat ----------------
+  // chat
   let isBusy = false;
   const history = [];
 
   function setBusy(v) {
     isBusy = v;
     resetBtn.disabled = v;
-    if (backBtn) backBtn.disabled = v || history.length === 0;
-    chat.querySelectorAll(".opt").forEach((b) => (b.disabled = v));
+    backBtn.disabled = v || history.length === 0;
+    chat.querySelectorAll(".opt").forEach((btn) => { btn.disabled = v; });
   }
 
   function scrollChatBottom() {
@@ -369,8 +376,8 @@
 
   function applyFilters() {
     filtered = allItems.slice();
-    safeText(matchCount, String(filtered.length));
     visibleCount = 12;
+    safeText(matchCount, String(filtered.length));
     renderResults();
   }
 
@@ -391,8 +398,12 @@
       btn.addEventListener("click", async () => {
         if (isBusy) return;
 
-        history.push({ stepIndex, key: s.key, prevChatHTML: chat.innerHTML });
-        if (backBtn) backBtn.disabled = history.length === 0;
+        history.push({
+          stepIndex,
+          key: s.key,
+          prevChatHTML: chat.innerHTML
+        });
+        backBtn.disabled = history.length === 0;
 
         state[s.key] = label;
         stepIndex++;
@@ -415,23 +426,21 @@
     scrollChatBottom();
   }
 
-  if (backBtn) {
-    backBtn.addEventListener("click", () => {
-      if (isBusy) return;
+  backBtn.addEventListener("click", () => {
+    if (isBusy) return;
 
-      const last = history.pop();
-      backBtn.disabled = history.length === 0;
-      if (!last) return;
+    const last = history.pop();
+    backBtn.disabled = history.length === 0;
+    if (!last) return;
 
-      stepIndex = last.stepIndex;
-      delete state[last.key];
-      chat.innerHTML = last.prevChatHTML;
+    stepIndex = last.stepIndex;
+    delete state[last.key];
+    chat.innerHTML = last.prevChatHTML;
 
-      applyFilters();
-      renderOptions();
-      scrollChatBottom();
-    });
-  }
+    applyFilters();
+    renderOptions();
+    scrollChatBottom();
+  });
 
   resetBtn.addEventListener("click", async () => {
     if (isBusy) return;
@@ -441,7 +450,7 @@
     Object.keys(state).forEach((k) => delete state[k]);
     chat.innerHTML = "";
     clearOptions();
-    if (backBtn) backBtn.disabled = true;
+    backBtn.disabled = true;
 
     await addBotTyped("Hi. Let’s browse moves and cinematic plans.");
     await addBotTyped(steps[0].text);
@@ -450,7 +459,7 @@
     renderOptions();
   });
 
-  // ---------------- Cards ----------------
+  // cards
   function bookmarkSvg() {
     return `<svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M6.5 3.5h11c.83 0 1.5.67 1.5 1.5v16.1c0 .78-.86 1.26-1.53.86L12 19.35 6.53 21.96C5.86 22.26 5 21.78 5 21.1V5c0-.83.67-1.5 1.5-1.5z"></path>
@@ -500,11 +509,7 @@
       FALLBACK_THUMB
     );
 
-    const shotsCount =
-      Number(p?.shots_count) ||
-      stepsArr.length ||
-      0;
-
+    const shotsCount = Number(p?.shots_count) || stepsArr.length || 0;
     const total = p?.total_duration || formatSeconds(p?.final?.duration_s);
     const desc = p?.description || "";
 
@@ -536,12 +541,11 @@
     return card;
   }
 
-  function renderEmptyCard(message) {
-    const card = document.createElement("div");
-    card.className = "card";
-    card.style.padding = "14px";
-    card.textContent = message;
-    return card;
+  function renderStatusCard(message) {
+    const el = document.createElement("div");
+    el.className = "cardStatus";
+    el.textContent = message;
+    return el;
   }
 
   function renderResults() {
@@ -549,31 +553,29 @@
     const slice = filtered.slice(0, visibleCount);
 
     if (!slice.length) {
-      grid.appendChild(renderEmptyCard("No results."));
-      if (moreBtn) moreBtn.style.display = "none";
+      grid.appendChild(renderStatusCard("No results."));
+      moreBtn.style.display = "none";
       safeText(matchCount, "0");
-      if (resultsHead) resultsHead.style.display = "none";
+      resultsHead.style.display = "none";
       return;
     }
 
     const hasAnyPlan = slice.some(isPlan);
-    if (resultsHead) resultsHead.style.display = hasAnyPlan ? "flex" : "none";
+    resultsHead.style.display = hasAnyPlan ? "flex" : "none";
 
     slice.forEach((item, i) => {
       const card = isPlan(item) ? renderPlanCard(item, i) : renderMoveCard(item, i);
       grid.appendChild(card);
     });
 
-    if (moreBtn) moreBtn.style.display = filtered.length > visibleCount ? "block" : "none";
+    moreBtn.style.display = filtered.length > visibleCount ? "block" : "none";
     safeText(matchCount, String(filtered.length));
   }
 
-  if (moreBtn) {
-    moreBtn.addEventListener("click", () => {
-      visibleCount += 12;
-      renderResults();
-    });
-  }
+  moreBtn.addEventListener("click", () => {
+    visibleCount += 12;
+    renderResults();
+  });
 
   function syncCardSaveUI(video) {
     const id = getVideoId(video);
@@ -586,7 +588,7 @@
     }
   }
 
-  // ---------------- Fullscreen player ----------------
+  // fullscreen video modal
   function buildVideoPlayer(video) {
     const saved = isSaved(getVideoId(video));
     const src = normalizeUrl(video?.videoUrl || video?.video_url);
@@ -654,19 +656,23 @@
 
     const onBackdrop = () => closeModal();
 
-    closeBtn && closeBtn.addEventListener("click", closeModal);
-    prevBtn && prevBtn.addEventListener("click", goPrev);
-    nextBtn && nextBtn.addEventListener("click", goNext);
+    if (closeBtn) closeBtn.addEventListener("click", closeModal);
+    if (prevBtn) prevBtn.addEventListener("click", goPrev);
+    if (nextBtn) nextBtn.addEventListener("click", goNext);
 
-    back10 && back10.addEventListener("click", () => {
-      if (!player) return;
-      player.currentTime = Math.max(0, (player.currentTime || 0) - 10);
-    });
+    if (back10) {
+      back10.addEventListener("click", () => {
+        if (!player) return;
+        player.currentTime = Math.max(0, (player.currentTime || 0) - 10);
+      });
+    }
 
-    fwd10 && fwd10.addEventListener("click", () => {
-      if (!player) return;
-      player.currentTime = Math.min(player.duration || 999999, (player.currentTime || 0) + 10);
-    });
+    if (fwd10) {
+      fwd10.addEventListener("click", () => {
+        if (!player) return;
+        player.currentTime = Math.min(player.duration || 999999, (player.currentTime || 0) + 10);
+      });
+    }
 
     if (saveMoveBtn) {
       saveMoveBtn.addEventListener("click", async () => {
@@ -676,23 +682,25 @@
       });
     }
 
-    fsBtn && fsBtn.addEventListener("click", async () => {
-      try {
-        if (!document.fullscreenElement) await modal.requestFullscreen();
-        else await document.exitFullscreen();
-      } catch (_) {}
-    });
+    if (fsBtn) {
+      fsBtn.addEventListener("click", async () => {
+        try {
+          if (!document.fullscreenElement) await modal.requestFullscreen();
+          else await document.exitFullscreen();
+        } catch (_) {}
+      });
+    }
 
     modalBackdrop.addEventListener("click", onBackdrop);
-    player && player.play().catch(() => {});
+    if (player) player.play().catch(() => {});
 
     modal._cleanup = () => {
       modalBackdrop.removeEventListener("click", onBackdrop);
-      try { player && player.pause(); } catch (_) {}
+      try { if (player) player.pause(); } catch (_) {}
     };
   }
 
-  // ---------------- Grid click ----------------
+  // grid click
   grid.addEventListener("click", async (e) => {
     const card = e.target.closest(".card, .cardPlan");
     if (!card) return;
@@ -727,10 +735,11 @@
     openPlayer(idx);
   });
 
-  // ---------------- Load items ----------------
+  // load items
   async function loadItems() {
     try {
       safeText(matchCount, "Loading…");
+
       const res = await fetch(CDN_INDEX_URL, { cache: "no-store" });
       if (!res.ok) throw new Error("HTTP " + res.status);
 
@@ -747,15 +756,15 @@
       console.error("[SM] loadVideos error:", e);
       safeText(matchCount, "—");
       grid.innerHTML = "";
-      grid.appendChild(renderEmptyCard("Failed to load videos."));
-      if (moreBtn) moreBtn.style.display = "none";
-      if (resultsHead) resultsHead.style.display = "none";
+      grid.appendChild(renderStatusCard("Failed to load videos."));
+      moreBtn.style.display = "none";
+      resultsHead.style.display = "none";
     }
   }
 
-  // ---------------- Init ----------------
+  // init
   (async () => {
-    if (backBtn) backBtn.disabled = true;
+    backBtn.disabled = true;
 
     await getMember(12000).catch(() => null);
     await hydrateSavedCache();
