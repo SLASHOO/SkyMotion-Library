@@ -514,62 +514,92 @@ if (missing.length) {
   }
 
   function renderPlanCard(p, i) {
-    const stepsArr = Array.isArray(p?.steps) ? p.steps : [];
-    const titleRaw = p?.title || "Cinematic plan";
-    const cover = pickThumb(
-      p?.thumb?.a,
-      p?.thumb_a,
-      stepsArr?.[0]?.thumb,
-      stepsArr?.[0]?.poster,
-      p?.thumb,
-      FALLBACK_THUMB
-    );
+  const stepsArr = Array.isArray(p?.steps) ? p.steps : [];
+  const titleRaw = p?.title || "Cinematic plan";
 
-    const shotsCount =
-      Number(p?.shots_count) ||
-      stepsArr.length ||
-      (Array.isArray(p?.edit?.shots) ? p.edit.shots.length : 0) ||
-      0;
+  const cover = pickThumb(
+    p?.thumb?.a,
+    p?.thumb_a,
+    stepsArr?.[0]?.thumb,
+    stepsArr?.[0]?.poster,
+    p?.thumb,
+    FALLBACK_THUMB
+  );
 
-    const total = p?.total_duration || formatSeconds(p?.final?.duration_s);
-    const desc = p?.description || "";
+  const shotsCount =
+    Number(p?.meta?.shots_count) ||
+    Number(p?.shots_count) ||
+    stepsArr.length ||
+    (Array.isArray(p?.edit?.shots) ? p.edit.shots.length : 0) ||
+    0;
 
-    const card = document.createElement("div");
-    card.className = "cardPlan";
-    card.dataset.index = String(i);
-    card.dataset.kind = "plan";
-    card.dataset.itemId = String(p?.id || "");
+  const clipSeconds =
+    Number(p?.final_clip_duration_s) ||
+    Number(p?.final?.duration_s) ||
+    0;
 
-    card.innerHTML = `
-      <div class="planMedia">
-        <img class="planImg" src="${cover}" alt="${escapeHtml(titleRaw)}" loading="lazy">
-        <div class="planPills">
-          <span class="pill pill--plan"><span class="pillDot"></span>Plan</span>
-          ${total ? `<span class="pill">${escapeHtml(total)}</span>` : ``}
-          ${shotsCount ? `<span class="pill">${escapeHtml(shotsCount)} shots</span>` : ``}
+  const clipText = clipSeconds ? formatSeconds(clipSeconds) : "";
+
+  const shootTimeMin =
+    Number(p?.meta?.shoot_time_min) ||
+    Number(p?.shoot_time_min) ||
+    0;
+
+  const shootTimeText = shootTimeMin ? `${shootTimeMin} min shoot` : "—";
+  const difficulty = p?.meta?.difficulty || p?.difficulty || "Beginner";
+
+  const card = document.createElement("div");
+  card.className = "cardPlan";
+  card.dataset.index = String(i);
+  card.dataset.kind = "plan";
+  card.dataset.itemId = String(p?.id || "");
+
+  card.innerHTML = `
+    <div class="planMedia">
+      <img class="planImg" src="${cover}" alt="${escapeHtml(titleRaw)}" loading="lazy">
+
+      <div class="planPills">
+        ${clipText ? `<span class="pill">${escapeHtml(clipText)}</span>` : ``}
+        ${shotsCount ? `<span class="pill">${escapeHtml(String(shotsCount))} shots</span>` : ``}
+        <span class="pill pill--plan">Plan</span>
+      </div>
+    </div>
+
+    <div class="planCaption">Cinematic Plan</div>
+
+    <div class="planBubble">
+      <h3 class="planName">${escapeHtml(titleRaw)}</h3>
+
+      <div class="planStats">
+        <div class="planStat">
+          <span class="planStat__label">Shoot time</span>
+          <span class="planStat__value">${escapeHtml(shootTimeText)}</span>
+        </div>
+
+        <div class="planStat">
+          <span class="planStat__label">Difficulty</span>
+          <span class="planStat__value">${escapeHtml(difficulty)}</span>
+        </div>
+
+        <div class="planStat">
+          <span class="planStat__label">Shots</span>
+          <span class="planStat__value">${escapeHtml(String(shotsCount || "—"))}</span>
         </div>
       </div>
+    </div>
+  `;
 
-      <div class="planCaption">Cinematic Plan</div>
-
-      <div class="planBubble">
-        <h3 class="planName">${escapeHtml(titleRaw)}</h3>
-        ${desc ? `<div class="planDesc">${escapeHtml(desc)}</div>` : ``}
-      </div>
-    `;
-
-    const img = card.querySelector(".planImg");
-    if (img) {
-      img.addEventListener("error", () => {
-        if (img.dataset.smFallbackApplied === "1") return;
-        img.dataset.smFallbackApplied = "1";
-        img.src = FALLBACK_THUMB;
-      });
-    }
-
-    return card;
+  const img = card.querySelector(".planImg");
+  if (img) {
+    img.addEventListener("error", () => {
+      if (img.dataset.smFallbackApplied === "1") return;
+      img.dataset.smFallbackApplied = "1";
+      img.src = FALLBACK_THUMB;
+    });
   }
 
+  return card;
+}
   function renderResults() {
     grid.innerHTML = "";
     const slice = filtered.slice(0, visibleCount);
