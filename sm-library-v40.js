@@ -1,22 +1,19 @@
 /* =========================================================
-  SKYMOTION — LIBRARY v1 (STANDALONE) + PLANS (IDEAL)
+  SKYMOTION — LIBRARY v1 (STANDALONE) CLEAN
   - Plans + Moves mixed by default
   - OLD #modal = fullscreen video player only
-  - NEW #planModal = cinematic plan slider modal
-  - Clickable dots
-  - Desktop click zones + keyboard arrows
-  - Result autoplay -> auto next
+  - Plan viewer removed from this embed
+  - Plan cards now dispatch event to external plan viewer
   - Robust image fallback
   - Scoped. Webflow-safe.
 ========================================================= */
 
 (() => {
   "use strict";
-  if (window.__SM_LIBRARY_V1_IDEAL__) return;
-  window.__SM_LIBRARY_V1_IDEAL__ = true;
+  if (window.__SM_LIBRARY_V1_CLEAN_SPLIT__) return;
+  window.__SM_LIBRARY_V1_CLEAN_SPLIT__ = true;
 
   const FALLBACK_THUMB = "https://skymotion-cdn.b-cdn.net/thumb.jpg";
-  const RESULT_VIDEO_URL = "https://skymotion-cdn.b-cdn.net/1.mp4";
   const CDN_INDEX_URL =
     "https://skymotion-cdn.b-cdn.net/videos_index.json?v=" + Date.now();
 
@@ -40,23 +37,14 @@
   const moreBtn = $("moreBtn");
   const resultsHead = $("resultsHead");
 
-  // OLD fullscreen video modal
+  // OLD fullscreen video modal only
   const modal = $("modal");
   const modalBackdrop = $("modalBackdrop");
   const modalContent = $("modalContent");
 
-  // NEW plan modal
-  const planModal = $("planModal");
-  const planModalBackdrop = $("planModalBackdrop");
-  const planModalDialog = $("planModalDialog");
-  const planViewport = $("planViewport");
-  const planTrack = $("planTrack");
-  const planDots = $("planDots");
-
   if (
     !assistant || !chat || !grid || !matchCount || !resetBtn ||
-    !modal || !modalBackdrop || !modalContent ||
-    !planModal || !planModalBackdrop || !planModalDialog || !planViewport || !planTrack || !planDots
+    !modal || !modalBackdrop || !modalContent
   ) {
     console.warn("[SM] Missing required elements. Stop.");
     return;
@@ -119,33 +107,6 @@
         { once: true }
       );
     });
-  }
-
-  function getPlanCover(plan) {
-    return pickThumb(
-      plan?.thumb?.a,
-      plan?.thumb_a,
-      plan?.steps?.[0]?.poster,
-      plan?.steps?.[0]?.thumb,
-      plan?.thumb,
-      FALLBACK_THUMB
-    );
-  }
-
-  function getPlanFinalVideo() {
-    return RESULT_VIDEO_URL;
-  }
-
-  function getPlanStepPoster(plan, step) {
-    return pickThumb(
-      step?.poster,
-      step?.thumb,
-      plan?.thumb?.a,
-      plan?.thumb_a,
-      plan?.thumb?.b,
-      plan?.thumb_b,
-      FALLBACK_THUMB
-    );
   }
 
   // ---------------- Memberstack (cached) ----------------
@@ -281,9 +242,8 @@
   const locks = { drawer: false, modal: false };
 
   function applyOverflow() {
-    const planOpen = planModal.getAttribute("aria-hidden") === "false";
     const videoOpen = modal.getAttribute("aria-hidden") === "false";
-    const lock = locks.drawer || planOpen || videoOpen || locks.modal;
+    const lock = locks.drawer || videoOpen || locks.modal;
     document.documentElement.style.overflow = lock ? "hidden" : "";
     document.body.style.overflow = lock ? "hidden" : "";
   }
@@ -338,31 +298,9 @@
     modal.classList.remove("isPlan");
   }
 
-  // ---------------- NEW plan modal ----------------
-  function setPlanModal(open) {
-    planModal.setAttribute("aria-hidden", open ? "false" : "true");
-    locks.modal = !!open;
-    applyOverflow();
-  }
-
-  function closePlanModal() {
-    try { planModal._cleanup && planModal._cleanup(); } catch (_) {}
-    planModal._cleanup = null;
-
-    setPlanModal(false);
-    planTrack.innerHTML = "";
-    planDots.innerHTML = "";
-    planModal.classList.remove("is-ready");
-  }
-
   // ---------------- ESC ----------------
   window.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-
-    if (planModal.getAttribute("aria-hidden") === "false") {
-      closePlanModal();
-      return;
-    }
 
     if (modal.getAttribute("aria-hidden") === "false") {
       closeModal();
@@ -436,11 +374,6 @@
   let allItems = [];
   let filtered = [];
   let visibleCount = 12;
-
-  function getMoveByRef(moveRef) {
-    if (!moveRef) return null;
-    return allItems.find((x) => !isPlan(x) && String(getVideoId(x)) === String(moveRef)) || null;
-  }
 
   function applyFilters() {
     filtered = allItems.slice();
@@ -778,422 +711,6 @@
     };
   }
 
-  // ---------------- Plan viewer helpers ----------------
-  function buildPlanDots(total, activeIndex) {
-    planDots.innerHTML = "";
-    for (let i = 0; i < total; i++) {
-      const dot = document.createElement("button");
-      dot.type = "button";
-      dot.className = "sm-plan-dot" + (i === activeIndex ? " is-active" : "");
-      dot.setAttribute("aria-label", `Go to slide ${i + 1}`);
-      dot.dataset.slide = String(i);
-      planDots.appendChild(dot);
-    }
-  }
-
-  function buildEditShots(plan, activeShotRef) {
-    const shots = Array.isArray(plan?.edit?.shots) ? plan.edit.shots : [];
-    if (!shots.length) return `<div class="sm-plan-edit__shots"></div>`;
-
-    return `
-      <div class="sm-plan-edit__shots">
-        ${shots.map((shot) => `
-          <div class="sm-plan-shot ${Number(shot?.n) === Number(activeShotRef) ? "is-active" : ""}">
-            <span class="sm-plan-shot__num">${String(shot?.n || "").padStart(2, "0")}</span>
-            <span class="sm-plan-shot__type">${escapeHtml(String(shot?.type || "shot"))}</span>
-            <span class="sm-plan-shot__dur">${Number(shot?.dur_s || 0) ? `${Number(shot.dur_s).toFixed(1)}s` : ""}</span>
-          </div>
-        `).join("")}
-      </div>
-    `;
-  }
-
-  function buildResultSlide(plan) {
-    const finalVideo = getPlanFinalVideo();
-    const poster = pickThumb(plan?.final?.poster, getPlanCover(plan));
-
-    return `
-      <section class="sm-plan-slide" data-plan-slide="0">
-        <div class="sm-plan-result">
-          <video
-            class="sm-plan-result__video"
-            id="planResultVideo"
-            autoplay
-            muted
-            playsinline
-            preload="auto"
-            poster="${escapeHtml(poster)}"
-          >
-            <source src="${escapeHtml(finalVideo)}" type="video/mp4">
-          </video>
-        </div>
-      </section>
-    `;
-  }
-
-  function buildStepSlide(plan, step, stepIndex) {
-    const shotRef = Number(step?.shot_ref || stepIndex + 1);
-    const poster = getPlanStepPoster(plan, step);
-
-    const move = getMoveByRef(step?.move_ref);
-    const moveVideoUrl = normalizeUrl(
-      step?.videoUrl ||
-      step?.video_url ||
-      step?.previewUrl ||
-      step?.preview_url ||
-      move?.videoUrl ||
-      move?.video_url ||
-      ""
-    );
-
-    const shots = Array.isArray(plan?.edit?.shots) ? plan.edit.shots : [];
-    const activeShot = shots.find((s) => Number(s?.n) === shotRef) || null;
-    const tip = activeShot?.tip || "Cut on beat • keep horizon • match direction";
-    const note = step?.note || "";
-
-    return `
-      <section class="sm-plan-slide" data-plan-slide="${stepIndex + 1}">
-        <div class="sm-plan-step">
-          <div class="sm-plan-step__top">
-            <div class="sm-plan-step__media">
-              <img
-                class="sm-plan-step__poster"
-                src="${escapeHtml(poster)}"
-                alt="${escapeHtml(step?.title || `Step ${stepIndex + 1}`)}"
-                loading="lazy"
-              />
-
-              <button
-                class="sm-plan-step__play"
-                type="button"
-                aria-label="Open move video"
-                data-step-video="${escapeHtml(moveVideoUrl)}"
-                data-step-title="${escapeHtml(step?.title || "")}"
-                data-step-move-ref="${escapeHtml(step?.move_ref || "")}"
-              >
-                <span class="sm-plan-play-icon"></span>
-              </button>
-
-              <div class="sm-plan-step__overlay">
-                <h3 class="sm-plan-step__title">${escapeHtml(step?.title || `Step ${stepIndex + 1}`)}</h3>
-                <div class="sm-plan-step__powered">${escapeHtml(step?.powered || "Powered by SkyMotion")}</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="sm-plan-step__bottom">
-            <div class="sm-plan-edit">
-              ${buildEditShots(plan, shotRef)}
-              <div class="sm-plan-edit__tip">${escapeHtml(tip)}</div>
-              <div class="sm-plan-edit__note">${escapeHtml(note)}</div>
-            </div>
-          </div>
-        </div>
-      </section>
-    `;
-  }
-
-  function buildPlanSlides(plan) {
-    const stepsArr = Array.isArray(plan?.steps) ? plan.steps : [];
-    const html = [buildResultSlide(plan), ...stepsArr.map((step, i) => buildStepSlide(plan, step, i))].join("");
-    planTrack.innerHTML = html;
-    attachImgFallback(planTrack);
-  }
-
-  function openPlanStepVideo(stepBtn) {
-    if (!stepBtn) return;
-
-    const moveRef = stepBtn.getAttribute("data-step-move-ref") || "";
-    const move = getMoveByRef(moveRef);
-
-    if (move) {
-      closePlanModal();
-      const idx = filtered.findIndex((x) => !isPlan(x) && String(getVideoId(x)) === String(getVideoId(move)));
-      if (idx >= 0) {
-        openPlayer(idx);
-        return;
-      }
-    }
-
-    const directUrl = normalizeUrl(stepBtn.getAttribute("data-step-video") || "");
-    if (!directUrl) return;
-
-    const tempMove = {
-      id: moveRef || directUrl,
-      title: stepBtn.getAttribute("data-step-title") || "Move video",
-      videoUrl: directUrl,
-      thumb: FALLBACK_THUMB,
-      duration: ""
-    };
-
-    closePlanModal();
-    buildVideoPlayer(tempMove);
-    setModal(true);
-
-    const player = $("playerVideo");
-    const closeBtn = $("playerClose");
-    const prevBtn = $("prevVideoBtn");
-    const nextBtn = $("nextVideoBtn");
-    const back10 = $("skipBackBtn");
-    const fwd10 = $("skipFwdBtn");
-    const fsBtn = $("fsBtn");
-    const saveMoveBtn = $("saveMoveBtn");
-
-    const onBackdrop = () => closeModal();
-
-    if (closeBtn) closeBtn.addEventListener("click", closeModal);
-    if (prevBtn) prevBtn.style.display = "none";
-    if (nextBtn) nextBtn.style.display = "none";
-    if (saveMoveBtn) saveMoveBtn.style.display = "none";
-
-    if (back10) {
-      back10.addEventListener("click", () => {
-        if (!player) return;
-        player.currentTime = Math.max(0, (player.currentTime || 0) - 10);
-      });
-    }
-
-    if (fwd10) {
-      fwd10.addEventListener("click", () => {
-        if (!player) return;
-        player.currentTime = Math.min(player.duration || 999999, (player.currentTime || 0) + 10);
-      });
-    }
-
-    if (fsBtn) {
-      fsBtn.addEventListener("click", async () => {
-        try {
-          if (!document.fullscreenElement) await modal.requestFullscreen();
-          else await document.exitFullscreen();
-        } catch (_) {}
-      });
-    }
-
-    modalBackdrop.addEventListener("click", onBackdrop);
-    player && player.play().catch(() => {});
-
-    modal._cleanup = () => {
-      modalBackdrop.removeEventListener("click", onBackdrop);
-      try { player && player.pause(); } catch (_) {}
-    };
-  }
-
-  // ---------------- Ideal Plan Viewer ----------------
-  function openPlan(plan) {
-    if (!plan) return;
-
-    try { planModal._cleanup && planModal._cleanup(); } catch (_) {}
-    planModal._cleanup = null;
-
-    buildPlanSlides(plan);
-
-    const stepsArr = Array.isArray(plan?.steps) ? plan.steps : [];
-    const totalSlides = 1 + stepsArr.length;
-
-    let activeIndex = 0;
-    let startX = 0;
-    let deltaX = 0;
-    let isPointerDown = false;
-
-    const resultVideo = $("planResultVideo");
-    const stepPlayButtons = Array.from(planTrack.querySelectorAll(".sm-plan-step__play"));
-
-    function stopResultIfNeeded() {
-      if (!resultVideo) return;
-      if (activeIndex !== 0) {
-        try { resultVideo.pause(); } catch (_) {}
-      }
-    }
-
-    function playResultIfNeeded() {
-      if (!resultVideo) return;
-      if (activeIndex === 0) {
-        resultVideo.currentTime = resultVideo.currentTime || 0;
-        resultVideo.play().catch(() => {});
-      }
-    }
-
-    function renderDots() {
-      buildPlanDots(totalSlides, activeIndex);
-      Array.from(planDots.querySelectorAll(".sm-plan-dot")).forEach((dot) => {
-        dot.addEventListener("click", onDotClick);
-      });
-    }
-
-    function updateSlider({ animate = true } = {}) {
-      planTrack.style.transition = animate
-        ? "transform .48s cubic-bezier(.22,.61,.36,1)"
-        : "none";
-      planTrack.style.transform = `translateX(-${activeIndex * 100}%)`;
-      renderDots();
-      stopResultIfNeeded();
-      playResultIfNeeded();
-    }
-
-    function goTo(index, opts = {}) {
-      const next = Math.max(0, Math.min(totalSlides - 1, Number(index || 0)));
-      if (next === activeIndex && !opts.force) return;
-      activeIndex = next;
-      updateSlider(opts);
-    }
-
-    function goNext() {
-      if (activeIndex < totalSlides - 1) goTo(activeIndex + 1);
-    }
-
-    function goPrev() {
-      if (activeIndex > 0) goTo(activeIndex - 1);
-    }
-
-    function onResultEnded() {
-      goNext();
-    }
-
-    function onStepPlayClick(e) {
-      openPlanStepVideo(e.currentTarget);
-    }
-
-    function onDotClick(e) {
-      const btn = e.currentTarget;
-      const idx = Number(btn.dataset.slide || "0");
-      goTo(idx);
-    }
-
-    function onPlanBackdrop() {
-      closePlanModal();
-    }
-
-    function onPlanCloseClick(e) {
-      if (e.target.closest("[data-plan-close]")) closePlanModal();
-    }
-
-    function onPointerDown(e) {
-      isPointerDown = true;
-      startX = e.clientX || 0;
-      deltaX = 0;
-    }
-
-    function onPointerMove(e) {
-      if (!isPointerDown) return;
-      deltaX = (e.clientX || 0) - startX;
-    }
-
-    function onPointerUp() {
-      if (!isPointerDown) return;
-      isPointerDown = false;
-
-      if (Math.abs(deltaX) > 50) {
-        if (deltaX < 0) goNext();
-        else goPrev();
-      }
-      deltaX = 0;
-    }
-
-    function onTouchStart(e) {
-      startX = e.touches?.[0]?.clientX || 0;
-      deltaX = 0;
-    }
-
-    function onTouchMove(e) {
-      deltaX = (e.touches?.[0]?.clientX || 0) - startX;
-    }
-
-    function onTouchEnd() {
-      if (Math.abs(deltaX) > 50) {
-        if (deltaX < 0) goNext();
-        else goPrev();
-      }
-      deltaX = 0;
-    }
-
-    function onKeydown(e) {
-      if (planModal.getAttribute("aria-hidden") !== "false") return;
-      if (e.key === "ArrowRight") {
-        e.preventDefault();
-        goNext();
-      } else if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        goPrev();
-      }
-    }
-
-    function onDesktopClickZones(e) {
-      const closeBtn = e.target.closest(".sm-plan-modal__close");
-      const dotBtn = e.target.closest(".sm-plan-dot");
-      const playBtn = e.target.closest(".sm-plan-step__play");
-      const editArea = e.target.closest(".sm-plan-step__bottom");
-      const topOverlay = e.target.closest(".sm-plan-step__overlay");
-
-      if (closeBtn || dotBtn || playBtn || editArea || topOverlay) return;
-
-      const rect = planViewport.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const leftZone = rect.width * 0.32;
-      const rightZone = rect.width * 0.68;
-
-      if (x < leftZone) {
-        goPrev();
-      } else if (x > rightZone) {
-        goNext();
-      }
-    }
-
-    setPlanModal(true);
-    planModal.classList.add("is-ready");
-
-    if (resultVideo) {
-      resultVideo.addEventListener("ended", onResultEnded);
-      resultVideo.play().catch(() => {});
-    }
-
-    stepPlayButtons.forEach((btn) => btn.addEventListener("click", onStepPlayClick));
-
-    planModalBackdrop.addEventListener("click", onPlanBackdrop);
-    planModalDialog.addEventListener("click", onPlanCloseClick);
-    planViewport.addEventListener("click", onDesktopClickZones);
-
-    planViewport.addEventListener("pointerdown", onPointerDown);
-    planViewport.addEventListener("pointermove", onPointerMove);
-    planViewport.addEventListener("pointerup", onPointerUp);
-    planViewport.addEventListener("pointercancel", onPointerUp);
-
-    planViewport.addEventListener("touchstart", onTouchStart, { passive: true });
-    planViewport.addEventListener("touchmove", onTouchMove, { passive: true });
-    planViewport.addEventListener("touchend", onTouchEnd, { passive: true });
-
-    window.addEventListener("keydown", onKeydown);
-
-    updateSlider({ animate: false });
-
-    planModal._cleanup = () => {
-      if (resultVideo) {
-        resultVideo.removeEventListener("ended", onResultEnded);
-        try { resultVideo.pause(); } catch (_) {}
-      }
-
-      stepPlayButtons.forEach((btn) => btn.removeEventListener("click", onStepPlayClick));
-
-      Array.from(planDots.querySelectorAll(".sm-plan-dot")).forEach((dot) => {
-        dot.removeEventListener("click", onDotClick);
-      });
-
-      planModalBackdrop.removeEventListener("click", onPlanBackdrop);
-      planModalDialog.removeEventListener("click", onPlanCloseClick);
-      planViewport.removeEventListener("click", onDesktopClickZones);
-
-      planViewport.removeEventListener("pointerdown", onPointerDown);
-      planViewport.removeEventListener("pointermove", onPointerMove);
-      planViewport.removeEventListener("pointerup", onPointerUp);
-      planViewport.removeEventListener("pointercancel", onPointerUp);
-
-      planViewport.removeEventListener("touchstart", onTouchStart);
-      planViewport.removeEventListener("touchmove", onTouchMove);
-      planViewport.removeEventListener("touchend", onTouchEnd);
-
-      window.removeEventListener("keydown", onKeydown);
-    };
-  }
-
   // ---------------- Grid click ----------------
   grid.addEventListener("click", async (e) => {
     const card = e.target.closest(".card, .cardPlan");
@@ -1217,8 +734,17 @@
       return;
     }
 
-    if (isPlan(item)) openPlan(item);
-    else openPlayer(idx);
+    if (isPlan(item)) {
+      window.dispatchEvent(new CustomEvent("sm:open-plan", {
+        detail: {
+          plan: item,
+          allItems: allItems
+        }
+      }));
+      return;
+    }
+
+    openPlayer(idx);
   });
 
   // ---------------- Load JSON ----------------
