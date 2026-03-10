@@ -375,7 +375,7 @@
     }
   });
 
-  // ---------------- Chat / filters ----------------
+    // ---------------- Chat / filters ----------------
   let isBusy = false;
   const history = [];
 
@@ -393,7 +393,26 @@
   function addBotRow() {
     const row = document.createElement("div");
     row.className = "msg msg--bot";
-    row.innerHTML = `<div class="avatar"></div><div class="bubble"><span class="text"></span><span class="caret"></span></div>`;
+    row.innerHTML = `
+      <div class="avatar"></div>
+      <div class="bubble">
+        <span class="text"></span>
+        <span class="caret"></span>
+      </div>
+    `;
+    chat.appendChild(row);
+    scrollChatBottom();
+    return row;
+  }
+
+  function addUserRow(text) {
+    const row = document.createElement("div");
+    row.className = "msg msg--user";
+    row.innerHTML = `
+      <div class="bubble">
+        <span class="text">${escapeHtml(text)}</span>
+      </div>
+    `;
     chat.appendChild(row);
     scrollChatBottom();
     return row;
@@ -432,6 +451,94 @@
 
   const state = {};
   let stepIndex = 0;
+
+  function renderOptions() {
+    clearOptions();
+    if (stepIndex >= steps.length) return;
+
+    const s = steps[stepIndex];
+    const wrap = document.createElement("div");
+    wrap.className = "options";
+
+    s.options.forEach((label) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "opt";
+      btn.textContent = label;
+
+      btn.addEventListener("click", async () => {
+        if (isBusy) return;
+
+        history.push({
+          stepIndex,
+          key: s.key,
+          prevChatHTML: chat.innerHTML,
+          prevState: { ...state }
+        });
+
+        if (backBtn) backBtn.disabled = history.length === 0;
+
+        addUserRow(label);
+
+        state[s.key] = label;
+        stepIndex++;
+
+        applyFilters();
+
+        if (stepIndex >= steps.length) {
+          clearOptions();
+          await addBotTyped("Done. Browse moves and cinematic plans in the results.");
+          return;
+        }
+
+        await addBotTyped(steps[stepIndex].text);
+        renderOptions();
+      });
+
+      wrap.appendChild(btn);
+    });
+
+    chat.appendChild(wrap);
+    scrollChatBottom();
+  }
+
+  if (backBtn) {
+    backBtn.addEventListener("click", () => {
+      if (isBusy) return;
+
+      const last = history.pop();
+      backBtn.disabled = history.length === 0;
+      if (!last) return;
+
+      stepIndex = last.stepIndex;
+
+      Object.keys(state).forEach((k) => delete state[k]);
+      Object.assign(state, last.prevState || {});
+
+      chat.innerHTML = last.prevChatHTML;
+
+      applyFilters();
+      renderOptions();
+      scrollChatBottom();
+    });
+  }
+
+  resetBtn.addEventListener("click", async () => {
+    if (isBusy) return;
+
+    history.length = 0;
+    stepIndex = 0;
+    Object.keys(state).forEach((k) => delete state[k]);
+    chat.innerHTML = "";
+    clearOptions();
+    if (backBtn) backBtn.disabled = true;
+
+    await addBotTyped("Hi. Let’s browse moves and cinematic plans.");
+    await addBotTyped(steps[0].text);
+
+    applyFilters();
+    renderOptions();
+  });
 
   // ---------------- Data ----------------
   let allItems = [];
@@ -962,18 +1069,12 @@
   (async () => {
     if (backBtn) backBtn.disabled = true;
 
-    // content first
     loadItems();
 
-    // assistant UI quickly
-    addBotTyped("Hi. Let’s browse moves and cinematic plans.");
-    setTimeout(() => {
-      addBotTyped(steps[0].text).then(() => {
-        renderOptions();
-      });
-    }, 120);
+    await addBotTyped("Hi. Let’s browse moves and cinematic plans.");
+    await addBotTyped(steps[0].text);
+    renderOptions();
 
-    // auth + saved moves in background
     getMember(12000)
       .then((member) => {
         if (!member?.id) return null;
