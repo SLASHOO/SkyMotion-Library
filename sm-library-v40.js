@@ -3,11 +3,15 @@
   - Plans + Moves mixed by default
   - OLD #modal = fullscreen video player only
   - Plan viewer removed from this embed
-  - Plan cards now dispatch event to external plan viewer
+  - Plan cards dispatch event to external plan viewer
   - Robust image fallback
   - Scoped. Webflow-safe.
   - FILTERS RESTORED
   - FASTER INITIAL LOAD
+  - CLEANED FROM SESSION REMNANTS
+  - ORDERED CHAT FLOW
+  - LIGHT CHAT HISTORY
+  - LOADING SKELETON
 ========================================================= */
 
 (() => {
@@ -16,8 +20,7 @@
   window.__SM_LIBRARY_V1_CLEAN_SPLIT__ = true;
 
   const FALLBACK_THUMB = "https://skymotion-cdn.b-cdn.net/thumb.jpg";
-  const CDN_INDEX_URL =
-    "https://skymotion-cdn.b-cdn.net/videos_index_v1.json?v=" + Date.now();
+  const CDN_INDEX_URL = "https://skymotion-cdn.b-cdn.net/videos_index_v1.json";
 
   const API_BASE = String(window.SM_API_BASE || "https://skymotion.onrender.com").replace(/\/$/, "");
   const $ = (id) => document.getElementById(id);
@@ -342,7 +345,7 @@
     }
   });
 
-  // ---------------- OLD video modal ----------------
+  // ---------------- Video modal ----------------
   function setModal(open) {
     modal.setAttribute("aria-hidden", open ? "false" : "true");
     locks.modal = !!open;
@@ -355,10 +358,6 @@
     setModal(false);
     modalContent.innerHTML = "";
     modal.classList.remove("isPlan");
-
-    setTimeout(() => {
-      window.dispatchEvent(new CustomEvent("sm:reopen-plan-after-player"));
-    }, 20);
   }
 
   // ---------------- ESC ----------------
@@ -375,9 +374,20 @@
     }
   });
 
-    // ---------------- Chat / filters ----------------
+  // ---------------- Chat / filters ----------------
   let isBusy = false;
   const history = [];
+
+  const steps = [
+    { key: "env", text: "Where are you flying?", options: ["Open area", "City / Urban", "Forest", "Near objects", "Tight space"] },
+    { key: "risk", text: "How safe does it feel here?", options: ["Safe & calm", "Some risks", "No aggressive moves"] },
+    { key: "subject", text: "What are you filming?", options: ["Person", "Car / Bike", "Building", "Landscape", "Atmosphere"] },
+    { key: "pilot", text: "How confident are you right now?", options: ["Playing safe", "Normal", "Ready to experiment"] },
+    { key: "mood", text: "What vibe do you want?", options: ["Smooth", "Epic", "Dynamic", "Tense", "Wow"] },
+  ];
+
+  const state = {};
+  let stepIndex = 0;
 
   function setBusy(v) {
     isBusy = v;
@@ -441,17 +451,6 @@
     chat.querySelectorAll(".options").forEach((el) => el.remove());
   }
 
-  const steps = [
-    { key: "env", text: "Where are you flying?", options: ["Open area", "City / Urban", "Forest", "Near objects", "Tight space"] },
-    { key: "risk", text: "How safe does it feel here?", options: ["Safe & calm", "Some risks", "No aggressive moves"] },
-    { key: "subject", text: "What are you filming?", options: ["Person", "Car / Bike", "Building", "Landscape", "Atmosphere"] },
-    { key: "pilot", text: "How confident are you right now?", options: ["Playing safe", "Normal", "Ready to experiment"] },
-    { key: "mood", text: "What vibe do you want?", options: ["Smooth", "Epic", "Dynamic", "Tense", "Wow"] },
-  ];
-
-  const state = {};
-  let stepIndex = 0;
-
   function renderOptions() {
     clearOptions();
     if (stepIndex >= steps.length) return;
@@ -471,7 +470,6 @@
 
         history.push({
           stepIndex,
-          key: s.key,
           prevChatHTML: chat.innerHTML,
           prevState: { ...state }
         });
@@ -481,7 +479,7 @@
         addUserRow(label);
 
         state[s.key] = label;
-        stepIndex++;
+        stepIndex += 1;
 
         applyFilters();
 
@@ -507,14 +505,12 @@
       if (isBusy) return;
 
       const last = history.pop();
-      backBtn.disabled = history.length === 0;
+      if (backBtn) backBtn.disabled = history.length === 0;
       if (!last) return;
 
       stepIndex = last.stepIndex;
-
       Object.keys(state).forEach((k) => delete state[k]);
       Object.assign(state, last.prevState || {});
-
       chat.innerHTML = last.prevChatHTML;
 
       applyFilters();
@@ -544,6 +540,21 @@
   let allItems = [];
   let filtered = [];
   let visibleCount = 12;
+  let isInitialLoading = true;
+
+  function showSkeletons(count = 8) {
+    grid.innerHTML = "";
+    for (let i = 0; i < count; i++) {
+      const el = document.createElement("div");
+      el.className = "card sm-skeleton-card";
+      el.style.minHeight = "220px";
+      el.innerHTML = `
+        <div class="sm-skeleton-fill" style="position:absolute;inset:0;"></div>
+      `;
+      grid.appendChild(el);
+    }
+    if (moreBtn) moreBtn.style.display = "none";
+  }
 
   function applyFilters() {
     const selected = {
@@ -568,83 +579,6 @@
     visibleCount = 12;
     renderResults();
   }
-
-  function renderOptions() {
-    clearOptions();
-    if (stepIndex >= steps.length) return;
-
-    const s = steps[stepIndex];
-    const wrap = document.createElement("div");
-    wrap.className = "options";
-
-    s.options.forEach((label) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "opt";
-      btn.textContent = label;
-
-      btn.addEventListener("click", async () => {
-        if (isBusy) return;
-
-        history.push({ stepIndex, key: s.key, prevChatHTML: chat.innerHTML });
-        if (backBtn) backBtn.disabled = history.length === 0;
-
-        state[s.key] = label;
-        stepIndex++;
-
-        applyFilters();
-
-        if (stepIndex >= steps.length) {
-          clearOptions();
-          await addBotTyped("Done. Browse moves and cinematic plans in the results.");
-          return;
-        }
-
-        await addBotTyped(steps[stepIndex].text);
-        renderOptions();
-      });
-
-      wrap.appendChild(btn);
-    });
-
-    chat.appendChild(wrap);
-    scrollChatBottom();
-  }
-
-  if (backBtn) {
-    backBtn.addEventListener("click", () => {
-      if (isBusy) return;
-
-      const last = history.pop();
-      backBtn.disabled = history.length === 0;
-      if (!last) return;
-
-      stepIndex = last.stepIndex;
-      delete state[last.key];
-      chat.innerHTML = last.prevChatHTML;
-
-      applyFilters();
-      renderOptions();
-      scrollChatBottom();
-    });
-  }
-
-  resetBtn.addEventListener("click", async () => {
-    if (isBusy) return;
-
-    history.length = 0;
-    stepIndex = 0;
-    Object.keys(state).forEach((k) => delete state[k]);
-    chat.innerHTML = "";
-    clearOptions();
-    if (backBtn) backBtn.disabled = true;
-
-    await addBotTyped("Hi. Let’s browse moves and cinematic plans.");
-    await addBotTyped(steps[0].text);
-
-    applyFilters();
-    renderOptions();
-  });
 
   function bookmarkSvg() {
     return `<svg viewBox="0 0 24 24" aria-hidden="true">
@@ -767,6 +701,8 @@
   }
 
   function renderResults() {
+    if (isInitialLoading) return;
+
     grid.innerHTML = "";
     const slice = filtered.slice(0, visibleCount);
 
@@ -786,6 +722,7 @@
       grid.appendChild(card);
     });
 
+    attachImgFallback(grid);
     if (moreBtn) moreBtn.style.display = filtered.length > visibleCount ? "block" : "none";
     safeText(matchCount, String(filtered.length));
   }
@@ -1038,42 +975,43 @@
   });
 
   // ---------------- Load JSON ----------------
- async function loadItems() {
-  try {
-    safeText(matchCount, "Loading…");
+  async function loadItems() {
+    try {
+      safeText(matchCount, "Loading…");
+      isInitialLoading = true;
+      showSkeletons(8);
 
-    const res = await fetch(CDN_INDEX_URL, {
-      cache: "no-store"
-    });
+      const res = await fetch(CDN_INDEX_URL, { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
 
-    if (!res.ok) throw new Error("HTTP " + res.status);
+      const json = await res.json();
+      const items = Array.isArray(json) ? json : [];
 
-    const json = await res.json();
-    const items = Array.isArray(json) ? json : [];
+      const plans = items.filter(isPlan);
+      const moves = items.filter((x) => !isPlan(x));
 
-    const plans = items.filter(isPlan);
-    const moves = items.filter((x) => !isPlan(x));
-
-    allItems = [...plans, ...moves];
-    applyFilters();
-  } catch (e) {
-    console.error("[SM] loadVideos error:", e);
-    safeText(matchCount, "—");
-    grid.innerHTML = `<div class="card" style="padding:14px">Failed to load videos.</div>`;
-    if (moreBtn) moreBtn.style.display = "none";
-    if (resultsHead) resultsHead.style.display = "none";
+      allItems = [...plans, ...moves];
+      isInitialLoading = false;
+      applyFilters();
+    } catch (e) {
+      console.error("[SM] loadVideos error:", e);
+      isInitialLoading = false;
+      safeText(matchCount, "—");
+      grid.innerHTML = `<div class="card" style="padding:14px">Failed to load videos.</div>`;
+      if (moreBtn) moreBtn.style.display = "none";
+      if (resultsHead) resultsHead.style.display = "none";
+    }
   }
-}
 
   // ---------------- Init ----------------
   (async () => {
     if (backBtn) backBtn.disabled = true;
 
-    loadItems();
-
     await addBotTyped("Hi. Let’s browse moves and cinematic plans.");
     await addBotTyped(steps[0].text);
     renderOptions();
+
+    loadItems();
 
     getMember(12000)
       .then((member) => {
