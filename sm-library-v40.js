@@ -360,6 +360,85 @@
     modal.classList.remove("isPlan");
   }
 
+  function setFsUiHidden(hidden) {
+  modal.classList.toggle("is-fs-ui-hidden", !!hidden);
+}
+
+function isElementFullscreen(el) {
+  return document.fullscreenElement === el || document.webkitFullscreenElement === el;
+}
+
+async function enterPlayerFullscreen(player) {
+  if (!player) return;
+
+  setFsUiHidden(true);
+
+  try {
+    if (player.webkitEnterFullscreen) {
+      player.webkitEnterFullscreen();
+      return;
+    }
+
+    if (!isElementFullscreen(modal)) {
+      if (modal.requestFullscreen) {
+        await modal.requestFullscreen({ navigationUI: "hide" }).catch(() => modal.requestFullscreen());
+      } else if (modal.webkitRequestFullscreen) {
+        modal.webkitRequestFullscreen();
+      }
+    }
+
+    const so = screen.orientation;
+    if (so && so.lock) {
+      try { await so.lock("landscape"); } catch (_) {}
+    }
+  } catch (_) {
+    setFsUiHidden(false);
+  }
+}
+
+async function exitPlayerFullscreen() {
+  try {
+    if (document.fullscreenElement && document.exitFullscreen) {
+      await document.exitFullscreen();
+    } else if (document.webkitFullscreenElement && document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+    }
+  } catch (_) {}
+
+  try {
+    const so = screen.orientation;
+    if (so && so.unlock) so.unlock();
+  } catch (_) {}
+
+  setFsUiHidden(false);
+}
+
+function bindFullscreenState(player) {
+  const sync = () => {
+    const nativeFs = isElementFullscreen(modal);
+    if (!nativeFs) {
+      setFsUiHidden(false);
+    }
+  };
+
+  document.addEventListener("fullscreenchange", sync);
+  document.addEventListener("webkitfullscreenchange", sync);
+
+  if (player) {
+    player.addEventListener("webkitbeginfullscreen", () => {
+      setFsUiHidden(true);
+    });
+
+    player.addEventListener("webkitendfullscreen", () => {
+      setFsUiHidden(false);
+    });
+  }
+
+  return () => {
+    document.removeEventListener("fullscreenchange", sync);
+    document.removeEventListener("webkitfullscreenchange", sync);
+  };
+}
   // ---------------- ESC ----------------
   window.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
@@ -841,14 +920,17 @@
       });
     }
 
-    if (fsBtn) {
-      fsBtn.addEventListener("click", async () => {
-        try {
-          if (!document.fullscreenElement) await modal.requestFullscreen();
-          else await document.exitFullscreen();
-        } catch (_) {}
-      });
+    let removeFsBindings = bindFullscreenState(player);
+
+if (fsBtn) {
+  fsBtn.addEventListener("click", async () => {
+    if (isElementFullscreen(modal)) {
+      await exitPlayerFullscreen();
+    } else {
+      await enterPlayerFullscreen(player);
     }
+  });
+}
 
     modalBackdrop.addEventListener("click", onBackdrop);
     player && player.play().catch(() => {});
@@ -856,6 +938,8 @@
     modal._cleanup = () => {
       modalBackdrop.removeEventListener("click", onBackdrop);
       try { player && player.pause(); } catch (_) {}
+      if (removeFsBindings) removeFsBindings();
+      setFsUiHidden(false);
     };
   }
 
