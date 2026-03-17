@@ -748,24 +748,24 @@ function bindFullscreenState(player) {
     card.dataset.kind = "plan";
     card.dataset.itemId = String(p?.id || "");
 
-    card.innerHTML = `
-      <div class="planMedia">
-        <img class="planImg" src="${cover}" alt="${escapeHtml(titleRaw)}" loading="lazy">
+card.innerHTML = `
+  <div class="planMedia">
+    <img class="planImg" src="${cover}" alt="${escapeHtml(titleRaw)}" loading="lazy">
 
-        <div class="planPills">
-          ${clipText ? `<span class="pill">${escapeHtml(clipText)}</span>` : ``}
-          ${shotsCount ? `<span class="pill">${escapeHtml(String(shotsCount))} shots</span>` : ``}
-          <span class="pill pill--plan">Plan</span>
-        </div>
-      </div>
+    <div class="planPills">
+      ${clipText ? `<span class="pill">${escapeHtml(clipText)}</span>` : ``}
+      ${shotsCount ? `<span class="pill">${escapeHtml(String(shotsCount))} shots</span>` : ``}
+      <span class="pill pill--plan">Plan</span>
+    </div>
 
-      <div class="planCaption">${escapeHtml(titleRaw)}</div>
+    <div class="planCaption">${escapeHtml(titleRaw)}</div>
+  </div>
 
-<div class="planBubble">
-  <div class="planType">Cinematic Plan</div>
-  <div class="planMeta">${escapeHtml(metaText)}</div>
-</div>
-    `;
+  <div class="planBubble">
+    <div class="planType">Cinematic Plan</div>
+    <div class="planMeta">${escapeHtml(metaText)}</div>
+  </div>
+`;
 
     const img = card.querySelector(".planImg");
     if (img) {
