@@ -759,12 +759,12 @@ function bindFullscreenState(player) {
         </div>
       </div>
 
-      <div class="planCaption">Cinematic Plan</div>
+      <div class="planCaption">${escapeHtml(titleRaw)}</div>
 
-      <div class="planBubble">
-        <h3 class="planName">${escapeHtml(titleRaw)}</h3>
-        <div class="planMeta">${escapeHtml(metaText)}</div>
-      </div>
+<div class="planBubble">
+  <div class="planType">Cinematic Plan</div>
+  <div class="planMeta">${escapeHtml(metaText)}</div>
+</div>
     `;
 
     const img = card.querySelector(".planImg");
