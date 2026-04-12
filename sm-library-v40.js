@@ -902,10 +902,11 @@
     `;
   }
 
-async function openPlayer(index) {
+async function openPlayer(index, options = {}) {
   if (!filtered.length) return;
 
-  returnToPlanAfterClose = false;
+  const preservePlanReturn = options.preservePlanReturn === true;
+  returnToPlanAfterClose = preservePlanReturn ? true : false;
 
   const item = filtered[index];
   if (!item || isPlan(item)) return;
@@ -1046,7 +1047,7 @@ async function openPlayer(index) {
     );
 
     if (idx >= 0) {
-      openPlayer(idx);
+    openPlayer(idx, { preservePlanReturn: true });
       return;
     }
 
