@@ -376,12 +376,23 @@
   }
 
   function closeModal() {
-    try { modal._cleanup && modal._cleanup(); } catch (_) {}
-    modal._cleanup = null;
-    setModal(false);
-    modalContent.innerHTML = "";
-    modal.classList.remove("isPlan");
+  const shouldReturnToPlan = returnToPlanAfterClose === true;
+
+  try { modal._cleanup && modal._cleanup(); } catch (_) {}
+  modal._cleanup = null;
+
+  setModal(false);
+  modalContent.innerHTML = "";
+  modal.classList.remove("isPlan");
+
+  returnToPlanAfterClose = false;
+
+  if (shouldReturnToPlan) {
+    setTimeout(() => {
+      window.dispatchEvent(new CustomEvent("sm:reopen-plan-after-player"));
+    }, 20);
   }
+}
 
   function setFsUiHidden(hidden) {
     modal.classList.toggle("is-fs-ui-hidden", !!hidden);
@@ -862,7 +873,8 @@
 
   // ---------------- Video player ----------------
   let currentIndex = -1;
-
+  let returnToPlanAfterClose = false;
+  
   function buildVideoPlayer(video) {
     const saved = isSaved(getVideoId(video));
     const src = normalizeUrl(video?.videoUrl || video?.video_url);
@@ -890,11 +902,13 @@
     `;
   }
 
-  async function openPlayer(index) {
-    if (!filtered.length) return;
+async function openPlayer(index) {
+  if (!filtered.length) return;
 
-    const item = filtered[index];
-    if (!item || isPlan(item)) return;
+  returnToPlanAfterClose = false;
+
+  const item = filtered[index];
+  if (!item || isPlan(item)) return;
 
     try { modal._cleanup && modal._cleanup(); } catch (_) {}
     modal._cleanup = null;
@@ -1019,8 +1033,10 @@
 
   // ---------------- External move-player bridge ----------------
   window.addEventListener("sm:open-move-player", (e) => {
-    const move = e.detail?.move;
-    if (!move) return;
+  returnToPlanAfterClose = true;
+
+  const move = e.detail?.move;
+  if (!move) return;
 
     const directUrl = normalizeUrl(move?.videoUrl || move?.video_url || "");
     if (!directUrl) return;
