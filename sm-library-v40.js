@@ -12,6 +12,7 @@
   - ORDERED CHAT FLOW
   - LIGHT CHAT HISTORY
   - LOADING SKELETON
+  - ANALYTICS EVENTS ADDED
 ========================================================= */
 
 (() => {
@@ -27,6 +28,12 @@
 
   const scope = $("sm-library-scope");
   if (!scope) return;
+
+  function emit(name, detail = {}) {
+    window.dispatchEvent(new CustomEvent(name, { detail }));
+  }
+
+  let libraryViewedSent = false;
 
   // ---------------- DOM ----------------
   const openAssistantBtn = $("openAssistantBtn");
@@ -274,6 +281,14 @@
         console.warn("[SM] unsave failed", e?.status, e?.payload || e);
       }
       await hydrateSavedCache();
+
+      emit("sm:save_clicked", {
+        item_id: id,
+        action: "unsave",
+        item_type: "move",
+        title: video?.title || ""
+      });
+
       return false;
     }
 
@@ -297,6 +312,14 @@
     }
 
     await hydrateSavedCache();
+
+    emit("sm:save_clicked", {
+      item_id: id,
+      action: "save",
+      item_type: "move",
+      title: video?.title || ""
+    });
+
     return true;
   }
 
@@ -361,84 +384,85 @@
   }
 
   function setFsUiHidden(hidden) {
-  modal.classList.toggle("is-fs-ui-hidden", !!hidden);
-}
+    modal.classList.toggle("is-fs-ui-hidden", !!hidden);
+  }
 
-function isElementFullscreen(el) {
-  return document.fullscreenElement === el || document.webkitFullscreenElement === el;
-}
+  function isElementFullscreen(el) {
+    return document.fullscreenElement === el || document.webkitFullscreenElement === el;
+  }
 
-async function enterPlayerFullscreen(player) {
-  if (!player) return;
+  async function enterPlayerFullscreen(player) {
+    if (!player) return;
 
-  setFsUiHidden(true);
+    setFsUiHidden(true);
 
-  try {
-    if (player.webkitEnterFullscreen) {
-      player.webkitEnterFullscreen();
-      return;
-    }
-
-    if (!isElementFullscreen(modal)) {
-      if (modal.requestFullscreen) {
-        await modal.requestFullscreen({ navigationUI: "hide" }).catch(() => modal.requestFullscreen());
-      } else if (modal.webkitRequestFullscreen) {
-        modal.webkitRequestFullscreen();
+    try {
+      if (player.webkitEnterFullscreen) {
+        player.webkitEnterFullscreen();
+        return;
       }
-    }
 
-    const so = screen.orientation;
-    if (so && so.lock) {
-      try { await so.lock("landscape"); } catch (_) {}
+      if (!isElementFullscreen(modal)) {
+        if (modal.requestFullscreen) {
+          await modal.requestFullscreen({ navigationUI: "hide" }).catch(() => modal.requestFullscreen());
+        } else if (modal.webkitRequestFullscreen) {
+          modal.webkitRequestFullscreen();
+        }
+      }
+
+      const so = screen.orientation;
+      if (so && so.lock) {
+        try { await so.lock("landscape"); } catch (_) {}
+      }
+    } catch (_) {
+      setFsUiHidden(false);
     }
-  } catch (_) {
+  }
+
+  async function exitPlayerFullscreen() {
+    try {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        await document.exitFullscreen();
+      } else if (document.webkitFullscreenElement && document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+      }
+    } catch (_) {}
+
+    try {
+      const so = screen.orientation;
+      if (so && so.unlock) so.unlock();
+    } catch (_) {}
+
     setFsUiHidden(false);
   }
-}
 
-async function exitPlayerFullscreen() {
-  try {
-    if (document.fullscreenElement && document.exitFullscreen) {
-      await document.exitFullscreen();
-    } else if (document.webkitFullscreenElement && document.webkitExitFullscreen) {
-      document.webkitExitFullscreen();
+  function bindFullscreenState(player) {
+    const sync = () => {
+      const nativeFs = isElementFullscreen(modal);
+      if (!nativeFs) {
+        setFsUiHidden(false);
+      }
+    };
+
+    document.addEventListener("fullscreenchange", sync);
+    document.addEventListener("webkitfullscreenchange", sync);
+
+    if (player) {
+      player.addEventListener("webkitbeginfullscreen", () => {
+        setFsUiHidden(true);
+      });
+
+      player.addEventListener("webkitendfullscreen", () => {
+        setFsUiHidden(false);
+      });
     }
-  } catch (_) {}
 
-  try {
-    const so = screen.orientation;
-    if (so && so.unlock) so.unlock();
-  } catch (_) {}
-
-  setFsUiHidden(false);
-}
-
-function bindFullscreenState(player) {
-  const sync = () => {
-    const nativeFs = isElementFullscreen(modal);
-    if (!nativeFs) {
-      setFsUiHidden(false);
-    }
-  };
-
-  document.addEventListener("fullscreenchange", sync);
-  document.addEventListener("webkitfullscreenchange", sync);
-
-  if (player) {
-    player.addEventListener("webkitbeginfullscreen", () => {
-      setFsUiHidden(true);
-    });
-
-    player.addEventListener("webkitendfullscreen", () => {
-      setFsUiHidden(false);
-    });
+    return () => {
+      document.removeEventListener("fullscreenchange", sync);
+      document.removeEventListener("webkitfullscreenchange", sync);
+    };
   }
 
-  return () => {
-    document.removeEventListener("fullscreenchange", sync);
-    document.removeEventListener("webkitfullscreenchange", sync);
-  };
-}
   // ---------------- ESC ----------------
   window.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
@@ -546,6 +570,11 @@ function bindFullscreenState(player) {
 
       btn.addEventListener("click", async () => {
         if (isBusy) return;
+
+        emit("sm:tag_clicked", {
+          step_key: s.key,
+          tag_name: label
+        });
 
         history.push({
           stepIndex,
@@ -657,6 +686,13 @@ function bindFullscreenState(player) {
     safeText(matchCount, String(filtered.length));
     visibleCount = 12;
     renderResults();
+
+    if (!libraryViewedSent && allItems.length) {
+      libraryViewedSent = true;
+      emit("sm:library_viewed", {
+        results_count: filtered.length
+      });
+    }
   }
 
   function bookmarkSvg() {
@@ -748,24 +784,24 @@ function bindFullscreenState(player) {
     card.dataset.kind = "plan";
     card.dataset.itemId = String(p?.id || "");
 
-card.innerHTML = `
-  <div class="planMedia">
-    <img class="planImg" src="${cover}" alt="${escapeHtml(titleRaw)}" loading="lazy">
+    card.innerHTML = `
+      <div class="planMedia">
+        <img class="planImg" src="${cover}" alt="${escapeHtml(titleRaw)}" loading="lazy">
 
-    <div class="planPills">
-      ${clipText ? `<span class="pill">${escapeHtml(clipText)}</span>` : ``}
-      ${shotsCount ? `<span class="pill">${escapeHtml(String(shotsCount))} shots</span>` : ``}
-      <span class="pill pill--plan">Plan</span>
-    </div>
+        <div class="planPills">
+          ${clipText ? `<span class="pill">${escapeHtml(clipText)}</span>` : ``}
+          ${shotsCount ? `<span class="pill">${escapeHtml(String(shotsCount))} shots</span>` : ``}
+          <span class="pill pill--plan">Plan</span>
+        </div>
 
-    <div class="planCaption">${escapeHtml(titleRaw)}</div>
-  </div>
+        <div class="planCaption">${escapeHtml(titleRaw)}</div>
+      </div>
 
-  <div class="planBubble">
-    <div class="planType">Cinematic Plan</div>
-    <div class="planMeta">${escapeHtml(metaText)}</div>
-  </div>
-`;
+      <div class="planBubble">
+        <div class="planType">Cinematic Plan</div>
+        <div class="planMeta">${escapeHtml(metaText)}</div>
+      </div>
+    `;
 
     const img = card.querySelector(".planImg");
     if (img) {
@@ -868,6 +904,12 @@ card.innerHTML = `
     const src = normalizeUrl(video?.videoUrl || video?.video_url);
     if (!src) return;
 
+    emit("sm:move_opened", {
+      item_id: getVideoId(video),
+      item_type: "move",
+      title: video?.title || ""
+    });
+
     buildVideoPlayer(video);
     setModal(true);
 
@@ -879,6 +921,38 @@ card.innerHTML = `
     const fwd10 = $("skipFwdBtn");
     const fsBtn = $("fsBtn");
     const saveMoveBtn = $("saveMoveBtn");
+
+    let startedTracked = false;
+    let watched50Tracked = false;
+
+    if (player) {
+      player.addEventListener("play", () => {
+        if (startedTracked) return;
+        startedTracked = true;
+
+        emit("sm:video_started", {
+          item_id: getVideoId(video),
+          item_type: "move",
+          title: video?.title || ""
+        });
+      });
+
+      player.addEventListener("timeupdate", () => {
+        if (watched50Tracked) return;
+        const duration = Number(player.duration || 0);
+        const current = Number(player.currentTime || 0);
+        if (!duration || duration <= 0) return;
+
+        if (current / duration >= 0.5) {
+          watched50Tracked = true;
+          emit("sm:video_watched_50", {
+            item_id: getVideoId(video),
+            item_type: "move",
+            title: video?.title || ""
+          });
+        }
+      });
+    }
 
     const goPrev = () => {
       for (let i = currentIndex - 1; i >= 0; i--) {
@@ -922,15 +996,15 @@ card.innerHTML = `
 
     let removeFsBindings = bindFullscreenState(player);
 
-if (fsBtn) {
-  fsBtn.addEventListener("click", async () => {
-    if (isElementFullscreen(modal)) {
-      await exitPlayerFullscreen();
-    } else {
-      await enterPlayerFullscreen(player);
+    if (fsBtn) {
+      fsBtn.addEventListener("click", async () => {
+        if (isElementFullscreen(modal)) {
+          await exitPlayerFullscreen();
+        } else {
+          await enterPlayerFullscreen(player);
+        }
+      });
     }
-  });
-}
 
     modalBackdrop.addEventListener("click", onBackdrop);
     player && player.play().catch(() => {});
@@ -963,6 +1037,12 @@ if (fsBtn) {
     try { modal._cleanup && modal._cleanup(); } catch (_) {}
     modal._cleanup = null;
 
+    emit("sm:move_opened", {
+      item_id: getVideoId(move),
+      item_type: "move",
+      title: move?.title || "Move video"
+    });
+
     buildVideoPlayer({
       id: move?.id || directUrl,
       title: move?.title || "Move video",
@@ -982,6 +1062,38 @@ if (fsBtn) {
     const fwd10 = $("skipFwdBtn");
     const fsBtn = $("fsBtn");
     const saveMoveBtn = $("saveMoveBtn");
+
+    let startedTracked = false;
+    let watched50Tracked = false;
+
+    if (player) {
+      player.addEventListener("play", () => {
+        if (startedTracked) return;
+        startedTracked = true;
+
+        emit("sm:video_started", {
+          item_id: getVideoId(move),
+          item_type: "move",
+          title: move?.title || "Move video"
+        });
+      });
+
+      player.addEventListener("timeupdate", () => {
+        if (watched50Tracked) return;
+        const duration = Number(player.duration || 0);
+        const current = Number(player.currentTime || 0);
+        if (!duration || duration <= 0) return;
+
+        if (current / duration >= 0.5) {
+          watched50Tracked = true;
+          emit("sm:video_watched_50", {
+            item_id: getVideoId(move),
+            item_type: "move",
+            title: move?.title || "Move video"
+          });
+        }
+      });
+    }
 
     const onBackdrop = () => closeModal();
 
@@ -1004,12 +1116,15 @@ if (fsBtn) {
       });
     }
 
+    let removeFsBindings = bindFullscreenState(player);
+
     if (fsBtn) {
       fsBtn.addEventListener("click", async () => {
-        try {
-          if (!document.fullscreenElement) await modal.requestFullscreen();
-          else await document.exitFullscreen();
-        } catch (_) {}
+        if (isElementFullscreen(modal)) {
+          await exitPlayerFullscreen();
+        } else {
+          await enterPlayerFullscreen(player);
+        }
       });
     }
 
@@ -1019,6 +1134,8 @@ if (fsBtn) {
     modal._cleanup = () => {
       modalBackdrop.removeEventListener("click", onBackdrop);
       try { player && player.pause(); } catch (_) {}
+      if (removeFsBindings) removeFsBindings();
+      setFsUiHidden(false);
     };
   });
 
@@ -1046,6 +1163,12 @@ if (fsBtn) {
     }
 
     if (isPlan(item)) {
+      emit("sm:plan_opened", {
+        item_id: item?.id || "",
+        item_type: "plan",
+        title: item?.title || ""
+      });
+
       window.dispatchEvent(new CustomEvent("sm:open-plan", {
         detail: {
           plan: item,
