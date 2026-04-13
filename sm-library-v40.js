@@ -1,4 +1,3 @@
-
 /* =========================================================
   SKYMOTION — LIBRARY v1 (STANDALONE) CLEAN
   - Plans + Moves mixed by default
@@ -102,13 +101,6 @@
   function normalizeUrl(u) {
     const s = String(u ?? "").trim();
     return s ? s : "";
-  }
-
-  function getVideoMimeType(url) {
-    const u = String(url || "").toLowerCase().split("?")[0].split("#")[0];
-    if (u.endsWith(".mov")) return "video/quicktime";
-    if (u.endsWith(".webm")) return "video/webm";
-    return "video/mp4";
   }
 
   function pickThumb(...candidates) {
@@ -391,8 +383,6 @@
     locks.modal = !!open;
     applyOverflow();
   }
-
-  let returnToPlanAfterClose = false;
 
   function closeModal() {
     const shouldReturnToPlan = returnToPlanAfterClose === true;
@@ -892,11 +882,11 @@
 
   // ---------------- Video player ----------------
   let currentIndex = -1;
+  let returnToPlanAfterClose = false;
 
   function buildVideoPlayer(video) {
     const saved = isSaved(getVideoId(video));
     const src = normalizeUrl(video?.videoUrl || video?.video_url);
-    const mime = getVideoMimeType(src);
 
     modalContent.innerHTML = `
       <div class="player">
@@ -906,7 +896,7 @@
         </div>
 
         <video id="playerVideo" controls playsinline preload="metadata">
-          <source src="${escapeHtml(src)}" type="${escapeHtml(mime)}">
+          <source src="${escapeHtml(src)}" type="video/mp4">
         </video>
 
         <div class="player__bar">
