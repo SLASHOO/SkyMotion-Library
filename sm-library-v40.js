@@ -76,6 +76,11 @@
   // ---------------- Helpers ----------------
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  function setPlayerViewportHeight() {
+    const vh = window.innerHeight * 0.01;
+    document.documentElement.style.setProperty("--sm-player-vh", `${vh}px`);
+  }
+
   function escapeHtml(str) {
     return String(str ?? "")
       .replaceAll("&", "&amp;")
@@ -96,6 +101,13 @@
   function normalizeUrl(u) {
     const s = String(u ?? "").trim();
     return s ? s : "";
+  }
+
+  function getVideoMimeType(url) {
+    const u = String(url || "").toLowerCase().split("?")[0].split("#")[0];
+    if (u.endsWith(".mov")) return "video/quicktime";
+    if (u.endsWith(".webm")) return "video/webm";
+    return "video/mp4";
   }
 
   function pickThumb(...candidates) {
@@ -181,6 +193,10 @@
 
     return map?.[stepKey]?.[label] || String(label).toLowerCase();
   }
+
+  window.addEventListener("resize", setPlayerViewportHeight);
+  window.addEventListener("orientationchange", setPlayerViewportHeight);
+  setPlayerViewportHeight();
 
   // ---------------- Memberstack (cached) ----------------
   let _memberCache = null;
@@ -375,24 +391,26 @@
     applyOverflow();
   }
 
+  let returnToPlanAfterClose = false;
+
   function closeModal() {
-  const shouldReturnToPlan = returnToPlanAfterClose === true;
+    const shouldReturnToPlan = returnToPlanAfterClose === true;
 
-  try { modal._cleanup && modal._cleanup(); } catch (_) {}
-  modal._cleanup = null;
+    try { modal._cleanup && modal._cleanup(); } catch (_) {}
+    modal._cleanup = null;
 
-  setModal(false);
-  modalContent.innerHTML = "";
-  modal.classList.remove("isPlan");
+    setModal(false);
+    modalContent.innerHTML = "";
+    modal.classList.remove("isPlan");
 
-  returnToPlanAfterClose = false;
+    returnToPlanAfterClose = false;
 
-  if (shouldReturnToPlan) {
-    setTimeout(() => {
-      window.dispatchEvent(new CustomEvent("sm:reopen-plan-after-player"));
-    }, 20);
+    if (shouldReturnToPlan) {
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("sm:reopen-plan-after-player"));
+      }, 20);
+    }
   }
-}
 
   function setFsUiHidden(hidden) {
     modal.classList.toggle("is-fs-ui-hidden", !!hidden);
@@ -873,22 +891,22 @@
 
   // ---------------- Video player ----------------
   let currentIndex = -1;
-  let returnToPlanAfterClose = false;
-  
+
   function buildVideoPlayer(video) {
     const saved = isSaved(getVideoId(video));
     const src = normalizeUrl(video?.videoUrl || video?.video_url);
+    const mime = getVideoMimeType(src);
 
     modalContent.innerHTML = `
       <div class="player">
-        <video id="playerVideo" controls playsinline preload="metadata">
-          <source src="${escapeHtml(src)}" type="video/mp4">
-        </video>
-
         <div class="player__top">
           <div class="player__title">${escapeHtml(video?.title || "")}</div>
           <button class="player__close" id="playerClose" type="button" aria-label="Close">×</button>
         </div>
+
+        <video id="playerVideo" controls playsinline preload="metadata">
+          <source src="${escapeHtml(src)}" type="${escapeHtml(mime)}">
+        </video>
 
         <div class="player__bar">
           <button class="btn" id="prevVideoBtn" type="button">Prev</button>
@@ -902,14 +920,14 @@
     `;
   }
 
-async function openPlayer(index, options = {}) {
-  if (!filtered.length) return;
+  async function openPlayer(index, options = {}) {
+    if (!filtered.length) return;
 
-  const preservePlanReturn = options.preservePlanReturn === true;
-  returnToPlanAfterClose = preservePlanReturn ? true : false;
+    const preservePlanReturn = options.preservePlanReturn === true;
+    returnToPlanAfterClose = preservePlanReturn ? true : false;
 
-  const item = filtered[index];
-  if (!item || isPlan(item)) return;
+    const item = filtered[index];
+    if (!item || isPlan(item)) return;
 
     try { modal._cleanup && modal._cleanup(); } catch (_) {}
     modal._cleanup = null;
@@ -926,6 +944,8 @@ async function openPlayer(index, options = {}) {
     });
 
     buildVideoPlayer(video);
+    window.scrollTo(0, 0);
+    setPlayerViewportHeight();
     setModal(true);
 
     const player = $("playerVideo");
@@ -1034,10 +1054,10 @@ async function openPlayer(index, options = {}) {
 
   // ---------------- External move-player bridge ----------------
   window.addEventListener("sm:open-move-player", (e) => {
-  returnToPlanAfterClose = true;
+    returnToPlanAfterClose = true;
 
-  const move = e.detail?.move;
-  if (!move) return;
+    const move = e.detail?.move;
+    if (!move) return;
 
     const directUrl = normalizeUrl(move?.videoUrl || move?.video_url || "");
     if (!directUrl) return;
@@ -1047,7 +1067,7 @@ async function openPlayer(index, options = {}) {
     );
 
     if (idx >= 0) {
-    openPlayer(idx, { preservePlanReturn: true });
+      openPlayer(idx, { preservePlanReturn: true });
       return;
     }
 
@@ -1069,6 +1089,8 @@ async function openPlayer(index, options = {}) {
       duration: move?.duration || ""
     });
 
+    window.scrollTo(0, 0);
+    setPlayerViewportHeight();
     setModal(true);
 
     const player = $("playerVideo");
