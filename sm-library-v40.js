@@ -21,7 +21,7 @@
   window.__SM_LIBRARY_V1_CLEAN_SPLIT__ = true;
 
   const FALLBACK_THUMB = "https://skymotion-cdn.b-cdn.net/thumb.jpg";
-  const CDN_INDEX_URL = "https://skymotion-cdn.b-cdn.net/videos_index_v9.json";
+  const CDN_INDEX_URL = "https://skymotion-cdn.b-cdn.net/videos_index_v10.json";
 
   const API_BASE = String(window.SM_API_BASE || "https://skymotion.onrender.com").replace(/\/$/, "");
   const $ = (id) => document.getElementById(id);
