@@ -21,7 +21,7 @@
   window.__SM_LIBRARY_V1_CLEAN_SPLIT__ = true;
 
   const FALLBACK_THUMB = "https://skymotion-cdn.b-cdn.net/thumb.jpg";
-  const CDN_INDEX_URL = "https://skymotion-cdn.b-cdn.net/videos_index_v12.json";
+  const CDN_INDEX_URL = "https://skymotion-cdn.b-cdn.net/videos_index_v11.json";
 
   const API_BASE = String(window.SM_API_BASE || "https://skymotion.onrender.com").replace(/\/$/, "");
   const $ = (id) => document.getElementById(id);
@@ -895,7 +895,7 @@
           <button class="player__close" id="playerClose" type="button" aria-label="Close">×</button>
         </div>
 
-        <video id="playerVideo" playsinline webkit-playsinline preload="metadata">
+        <video id="playerVideo" controls playsinline preload="metadata">
           <source src="${escapeHtml(src)}" type="video/mp4">
         </video>
 
