@@ -89,64 +89,81 @@
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
   }
+
   function formatPlayerTime(sec) {
-  const n = Number(sec || 0);
-  if (!Number.isFinite(n) || n < 0) return "0:00";
-  const m = Math.floor(n / 60);
-  const s = Math.floor(n % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
+    const n = Number(sec || 0);
+    if (!Number.isFinite(n) || n < 0) return "0:00";
+    const m = Math.floor(n / 60);
+    const s = Math.floor(n % 60);
+    return `${m}:${String(s).padStart(2, "0")}`;
+  }
+
   function isMobilePlayerUi() {
-  return window.matchMedia("(max-width: 900px)").matches;
-}
+    return window.matchMedia("(max-width: 900px)").matches;
+  }
 
-function isPortraitViewport() {
-  return window.matchMedia("(orientation: portrait)").matches;
-}
+  function isPortraitViewport() {
+    return window.matchMedia("(orientation: portrait)").matches;
+  }
 
-function shouldShowRotateHint() {
-  return isMobilePlayerUi() && isPortraitViewport();
-}
+  function shouldShowRotateHint() {
+    return isMobilePlayerUi() && isPortraitViewport();
+  }
 
-function setRotateHintVisible(visible) {
-  const hint = $("rotateHint");
-  if (!hint) return;
-  hint.classList.toggle("is-visible", !!visible);
-}
+  function setRotateHintVisible(visible) {
+    const hint = $("rotateHint");
+    if (!hint) return;
+    hint.classList.toggle("is-visible", !!visible);
+  }
 
-function bindRotateHint() {
-  let hideTimer = null;
+  function bindRotateHint() {
+    let hideTimer = null;
 
-  const update = () => {
-    setRotateHintVisible(shouldShowRotateHint());
-  };
+    const update = () => {
+      setRotateHintVisible(shouldShowRotateHint());
+    };
 
-  const showTemporarily = () => {
-    clearTimeout(hideTimer);
-    update();
+    const showTemporarily = () => {
+      clearTimeout(hideTimer);
+      update();
 
-    if (shouldShowRotateHint()) {
-      hideTimer = setTimeout(() => {
-        setRotateHintVisible(false);
-      }, 2600);
+      if (shouldShowRotateHint()) {
+        hideTimer = setTimeout(() => {
+          setRotateHintVisible(false);
+        }, 2600);
+      }
+    };
+
+    const onResize = () => update();
+    const onOrientation = () => update();
+
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onOrientation);
+
+    showTemporarily();
+
+    return () => {
+      clearTimeout(hideTimer);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onOrientation);
+      setRotateHintVisible(false);
+    };
+  }
+
+  function togglePlayerPlayback(player, playPauseBtn) {
+    if (!player) return;
+
+    if (player.paused) {
+      player.play().catch(() => {});
+    } else {
+      player.pause();
     }
-  };
 
-  const onResize = () => update();
-  const onOrientation = () => update();
+    if (playPauseBtn) {
+      playPauseBtn.textContent = player.paused ? "Play" : "Pause";
+    }
+  }
 
-  window.addEventListener("resize", onResize);
-  window.addEventListener("orientationchange", onOrientation);
-
-  showTemporarily();
-
-  return () => {
-    clearTimeout(hideTimer);
-    window.removeEventListener("resize", onResize);
-    window.removeEventListener("orientationchange", onOrientation);
-    setRotateHintVisible(false);
-  };
-}
   function safeText(el, t) {
     if (el) el.textContent = String(t ?? "");
   }
@@ -540,17 +557,40 @@ function bindRotateHint() {
     };
   }
 
-  // ---------------- ESC ----------------
+  // ---------------- Keyboard ----------------
   window.addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return;
+    const modalOpen = modal.getAttribute("aria-hidden") === "false";
 
-    if (modal.getAttribute("aria-hidden") === "false") {
-      closeModal();
+    if (e.key === "Escape") {
+      if (modalOpen) {
+        closeModal();
+        return;
+      }
+
+      if (assistant.classList.contains("active")) {
+        closeAssistant();
+      }
       return;
     }
 
-    if (assistant.classList.contains("active")) {
-      closeAssistant();
+    if (!modalOpen) return;
+
+    if (e.code === "Space" || e.key === " ") {
+      const player = $("playerVideo");
+      const playPauseBtn = $("playPauseBtn");
+
+      if (!player) return;
+
+      const tag = String(document.activeElement?.tagName || "").toLowerCase();
+      const isTypingTarget =
+        tag === "input" ||
+        tag === "textarea" ||
+        document.activeElement?.isContentEditable;
+
+      if (isTypingTarget) return;
+
+      e.preventDefault();
+      togglePlayerPlayback(player, playPauseBtn);
     }
   });
 
@@ -942,135 +982,115 @@ function bindRotateHint() {
   let returnToPlanAfterClose = false;
 
   function buildVideoPlayer(video) {
-  const src = normalizeUrl(video?.videoUrl || video?.video_url);
+    const src = normalizeUrl(video?.videoUrl || video?.video_url);
 
-  modalContent.innerHTML = `
-    <div class="player">
-      <div class="player__top">
-        <div class="player__title">${escapeHtml(video?.title || "")}</div>
-        <button class="player__close" id="playerClose" type="button" aria-label="Close">×</button>
-      </div>
-
-      <div class="player__videoWrap">
-        <video id="playerVideo" playsinline preload="metadata">
-          <source src="${escapeHtml(src)}" type="video/mp4">
-        </video>
-
-        <div class="player__rotateHint" id="rotateHint" aria-hidden="true">
-          Rotate phone for better view
+    modalContent.innerHTML = `
+      <div class="player">
+        <div class="player__top">
+          <div class="player__title">${escapeHtml(video?.title || "")}</div>
+          <button class="player__close" id="playerClose" type="button" aria-label="Close">×</button>
         </div>
 
-        <div class="player__controls" id="playerControls">
-          <div class="player__progressWrap">
-            <input
-              id="playerSeek"
-              class="player__seek"
-              type="range"
-              min="0"
-              max="100"
-              step="0.1"
-              value="0"
-              aria-label="Video progress"
-            >
+        <div class="player__videoWrap">
+          <video id="playerVideo" playsinline preload="metadata">
+            <source src="${escapeHtml(src)}" type="video/mp4">
+          </video>
+
+          <div class="player__rotateHint" id="rotateHint" aria-hidden="true">
+            Rotate phone for better view
           </div>
 
-          <div class="player__bar">
-            <div class="player__barLeft">
-              <button class="btn" id="playPauseBtn" type="button">Pause</button>
-              <div class="player__time" id="playerTime">0:00 / 0:00</div>
+          <div class="player__controls" id="playerControls">
+            <div class="player__progressWrap">
+              <input
+                id="playerSeek"
+                class="player__seek"
+                type="range"
+                min="0"
+                max="100"
+                step="0.1"
+                value="0"
+                aria-label="Video progress"
+              >
             </div>
 
-            <div class="player__barCenter">
-              <button class="btn" id="prevVideoBtn" type="button">Prev</button>
-              <button class="btn" id="nextVideoBtn" type="button">Next</button>
-            </div>
+            <div class="player__bar">
+              <div class="player__barLeft">
+                <button class="btn" id="playPauseBtn" type="button">Pause</button>
+                <div class="player__time" id="playerTime">0:00 / 0:00</div>
+              </div>
 
-            <div class="player__barRight">
-              <button class="btn" id="fsBtn" type="button">Fullscreen</button>
+              <div class="player__barCenter">
+                <button class="btn" id="prevVideoBtn" type="button">Prev</button>
+                <button class="btn" id="nextVideoBtn" type="button">Next</button>
+              </div>
+
+              <div class="player__barRight">
+                <button class="btn" id="fsBtn" type="button">Fullscreen</button>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
-  `;
-}
-  async function openPlayer(index, options = {}) {
-  if (!filtered.length) return;
+    `;
+  }
 
-  const preservePlanReturn = options.preservePlanReturn === true;
-  returnToPlanAfterClose = preservePlanReturn ? true : false;
+  function bindPlayerUi({
+    player,
+    playPauseBtn,
+    playerSeek,
+    playerTime,
+    closeBtn,
+    prevBtn,
+    nextBtn,
+    fsBtn,
+    videoWrap,
+    controls,
+    onPrev,
+    onNext,
+    onClose,
+    analyticsId,
+    analyticsTitle
+  }) {
+    let startedTracked = false;
+    let watched50Tracked = false;
+    let isSeeking = false;
 
-  const item = filtered[index];
-  if (!item || isPlan(item)) return;
+    function updateTimeUi() {
+      if (!player || !playerTime || !playerSeek) return;
 
-  try { modal._cleanup && modal._cleanup(); } catch (_) {}
-  modal._cleanup = null;
+      const duration = Number(player.duration || 0);
+      const current = Number(player.currentTime || 0);
 
-  currentIndex = index;
-  const video = filtered[currentIndex];
-  const src = normalizeUrl(video?.videoUrl || video?.video_url);
-  if (!src) return;
+      playerTime.textContent = `${formatPlayerTime(current)} / ${formatPlayerTime(duration)}`;
 
-  emit("sm:move_opened", {
-    item_id: getVideoId(video),
-    item_type: "move",
-    title: video?.title || ""
-  });
-
-  buildVideoPlayer(video);
-  window.scrollTo(0, 0);
-  setPlayerViewportHeight();
-  setModal(true);
-
-  const player = $("playerVideo");
-  const closeBtn = $("playerClose");
-  const prevBtn = $("prevVideoBtn");
-  const nextBtn = $("nextVideoBtn");
-  const fsBtn = $("fsBtn");
-  const playPauseBtn = $("playPauseBtn");
-  const playerSeek = $("playerSeek");
-  const playerTime = $("playerTime");
-
-  let startedTracked = false;
-  let watched50Tracked = false;
-  let isSeeking = false;
-
-  function updateTimeUi() {
-    if (!player || !playerTime || !playerSeek) return;
-
-    const duration = Number(player.duration || 0);
-    const current = Number(player.currentTime || 0);
-
-    playerTime.textContent = `${formatPlayerTime(current)} / ${formatPlayerTime(duration)}`;
-
-    if (!isSeeking) {
-      const progress = duration > 0 ? (current / duration) * 100 : 0;
-      playerSeek.value = String(progress);
+      if (!isSeeking) {
+        const progress = duration > 0 ? (current / duration) * 100 : 0;
+        playerSeek.value = String(progress);
+      }
     }
-  }
 
-  function updatePlayPauseUi() {
-    if (!playPauseBtn || !player) return;
-    playPauseBtn.textContent = player.paused ? "Play" : "Pause";
-  }
+    function updatePlayPauseUi() {
+      if (!playPauseBtn || !player) return;
+      playPauseBtn.textContent = player.paused ? "Play" : "Pause";
+    }
 
-  if (player) {
-    player.addEventListener("play", () => {
+    const onPlay = () => {
       updatePlayPauseUi();
 
       if (startedTracked) return;
       startedTracked = true;
 
       emit("sm:video_started", {
-        item_id: getVideoId(video),
+        item_id: analyticsId,
         item_type: "move",
-        title: video?.title || ""
+        title: analyticsTitle
       });
-    });
+    };
 
-    player.addEventListener("pause", updatePlayPauseUi);
-    player.addEventListener("loadedmetadata", updateTimeUi);
-    player.addEventListener("timeupdate", () => {
+    const onPause = () => updatePlayPauseUi();
+
+    const onTimeUpdate = () => {
       updateTimeUi();
 
       if (watched50Tracked) return;
@@ -1081,312 +1101,289 @@ function bindRotateHint() {
       if (current / duration >= 0.5) {
         watched50Tracked = true;
         emit("sm:video_watched_50", {
-          item_id: getVideoId(video),
+          item_id: analyticsId,
           item_type: "move",
-          title: video?.title || ""
+          title: analyticsTitle
         });
       }
-    });
+    };
 
-    player.addEventListener("ended", () => {
+    const onEnded = () => {
       updatePlayPauseUi();
       updateTimeUi();
-    });
-  }
+    };
 
-  const goPrev = () => {
-  for (let i = currentIndex - 1; i >= 0; i--) {
-    if (!isPlan(filtered[i])) {
-      return openPlayer(i, { preservePlanReturn: returnToPlanAfterClose === true });
+    player?.addEventListener("play", onPlay);
+    player?.addEventListener("pause", onPause);
+    player?.addEventListener("loadedmetadata", updateTimeUi);
+    player?.addEventListener("timeupdate", onTimeUpdate);
+    player?.addEventListener("ended", onEnded);
+
+    if (closeBtn) closeBtn.addEventListener("click", onClose);
+    if (prevBtn && onPrev) prevBtn.addEventListener("click", onPrev);
+    if (nextBtn && onNext) nextBtn.addEventListener("click", onNext);
+
+    if (playPauseBtn) {
+      playPauseBtn.addEventListener("click", () => {
+        togglePlayerPlayback(player, playPauseBtn);
+      });
     }
-  }
-};
 
-const goNext = () => {
-  for (let i = currentIndex + 1; i < filtered.length; i++) {
-    if (!isPlan(filtered[i])) {
-      return openPlayer(i, { preservePlanReturn: returnToPlanAfterClose === true });
+    if (playerSeek && player) {
+      playerSeek.addEventListener("pointerdown", () => {
+        isSeeking = true;
+      });
+
+      playerSeek.addEventListener("pointerup", () => {
+        const duration = Number(player.duration || 0);
+        const value = Number(playerSeek.value || 0);
+        if (duration > 0) {
+          player.currentTime = (value / 100) * duration;
+        }
+        isSeeking = false;
+        updateTimeUi();
+      });
+
+      playerSeek.addEventListener("input", () => {
+        const duration = Number(player.duration || 0);
+        const value = Number(playerSeek.value || 0);
+        const previewTime = duration > 0 ? (value / 100) * duration : 0;
+
+        if (playerTime) {
+          playerTime.textContent = `${formatPlayerTime(previewTime)} / ${formatPlayerTime(duration)}`;
+        }
+      });
+
+      playerSeek.addEventListener("change", () => {
+        const duration = Number(player.duration || 0);
+        const value = Number(playerSeek.value || 0);
+        if (duration > 0) {
+          player.currentTime = (value / 100) * duration;
+        }
+        isSeeking = false;
+        updateTimeUi();
+      });
     }
-  }
-};
 
-  const onBackdrop = () => closeModal();
-
-  if (closeBtn) closeBtn.addEventListener("click", closeModal);
-  if (prevBtn) prevBtn.addEventListener("click", goPrev);
-  if (nextBtn) nextBtn.addEventListener("click", goNext);
-
-  if (playPauseBtn) {
-    playPauseBtn.addEventListener("click", () => {
+    const onVideoTap = (e) => {
+      const target = e.target;
       if (!player) return;
-      if (player.paused) {
-        player.play().catch(() => {});
-      } else {
-        player.pause();
-      }
-    });
-  }
 
-  if (playerSeek && player) {
-    playerSeek.addEventListener("pointerdown", () => {
-      isSeeking = true;
-    });
+      if (controls && controls.contains(target)) return;
+      if (target.closest(".player__top")) return;
+      if (target.closest(".player__rotateHint")) return;
 
-    playerSeek.addEventListener("pointerup", () => {
-      const duration = Number(player.duration || 0);
-      const value = Number(playerSeek.value || 0);
-      if (duration > 0) {
-        player.currentTime = (value / 100) * duration;
-      }
-      isSeeking = false;
-      updateTimeUi();
-    });
+      togglePlayerPlayback(player, playPauseBtn);
+    };
 
-    playerSeek.addEventListener("input", () => {
-      const duration = Number(player.duration || 0);
-      const value = Number(playerSeek.value || 0);
-      const previewTime = duration > 0 ? (value / 100) * duration : 0;
+    if (videoWrap) {
+      videoWrap.addEventListener("click", onVideoTap);
+    }
 
-      if (playerTime) {
-        playerTime.textContent = `${formatPlayerTime(previewTime)} / ${formatPlayerTime(duration)}`;
-      }
-    });
-
-    playerSeek.addEventListener("change", () => {
-      const duration = Number(player.duration || 0);
-      const value = Number(playerSeek.value || 0);
-      if (duration > 0) {
-        player.currentTime = (value / 100) * duration;
-      }
-      isSeeking = false;
-      updateTimeUi();
-    });
-  }
-
-  let removeFsBindings = bindFullscreenState(player);
+    let removeFsBindings = bindFullscreenState(player);
     let removeRotateHintBindings = bindRotateHint();
 
-  if (fsBtn) {
-    fsBtn.addEventListener("click", async () => {
-      if (isElementFullscreen(modal)) {
-        await exitPlayerFullscreen();
-      } else {
-        await enterPlayerFullscreen(player);
-      }
-    });
-  }
-
-  modalBackdrop.addEventListener("click", onBackdrop);
-
-  if (player) {
-    player.play().catch(() => {});
-    updatePlayPauseUi();
-    updateTimeUi();
-  }
-
-  modal._cleanup = () => {
-  modalBackdrop.removeEventListener("click", onBackdrop);
-  try { player && player.pause(); } catch (_) {}
-  if (removeFsBindings) removeFsBindings();
-  if (removeRotateHintBindings) removeRotateHintBindings();
-  setFsUiHidden(false);
-};
-}
-  // ---------------- External move-player bridge ----------------
-window.addEventListener("sm:open-move-player", (e) => {
-  returnToPlanAfterClose = true;
-
-  const move = e.detail?.move;
-  if (!move) return;
-
-  const directUrl = normalizeUrl(move?.videoUrl || move?.video_url || "");
-  if (!directUrl) return;
-
-  const idx = filtered.findIndex(
-    (x) => !isPlan(x) && String(getVideoId(x)) === String(getVideoId(move))
-  );
-
-  if (idx >= 0) {
-    openPlayer(idx, { preservePlanReturn: true });
-    return;
-  }
-
-  try { modal._cleanup && modal._cleanup(); } catch (_) {}
-  modal._cleanup = null;
-
-  emit("sm:move_opened", {
-    item_id: getVideoId(move),
-    item_type: "move",
-    title: move?.title || "Move video"
-  });
-
-  buildVideoPlayer({
-    id: move?.id || directUrl,
-    title: move?.title || "Move video",
-    videoUrl: directUrl,
-    video_url: directUrl,
-    thumb: move?.thumb || FALLBACK_THUMB,
-    duration: move?.duration || ""
-  });
-
-  window.scrollTo(0, 0);
-  setPlayerViewportHeight();
-  setModal(true);
-
-  const player = $("playerVideo");
-  const closeBtn = $("playerClose");
-  const prevBtn = $("prevVideoBtn");
-  const nextBtn = $("nextVideoBtn");
-  const fsBtn = $("fsBtn");
-  const playPauseBtn = $("playPauseBtn");
-  const playerSeek = $("playerSeek");
-  const playerTime = $("playerTime");
-
-  let startedTracked = false;
-  let watched50Tracked = false;
-  let isSeeking = false;
-
-  function updateTimeUi() {
-    if (!player || !playerTime || !playerSeek) return;
-
-    const duration = Number(player.duration || 0);
-    const current = Number(player.currentTime || 0);
-
-    playerTime.textContent = `${formatPlayerTime(current)} / ${formatPlayerTime(duration)}`;
-
-    if (!isSeeking) {
-      const progress = duration > 0 ? (current / duration) * 100 : 0;
-      playerSeek.value = String(progress);
-    }
-  }
-
-  function updatePlayPauseUi() {
-    if (!playPauseBtn || !player) return;
-    playPauseBtn.textContent = player.paused ? "Play" : "Pause";
-  }
-
-  if (player) {
-    player.addEventListener("play", () => {
-      updatePlayPauseUi();
-
-      if (startedTracked) return;
-      startedTracked = true;
-
-      emit("sm:video_started", {
-        item_id: getVideoId(move),
-        item_type: "move",
-        title: move?.title || "Move video"
+    if (fsBtn) {
+      fsBtn.addEventListener("click", async () => {
+        if (isElementFullscreen(modal)) {
+          await exitPlayerFullscreen();
+        } else {
+          await enterPlayerFullscreen(player);
+        }
       });
-    });
+    }
 
-    player.addEventListener("pause", updatePlayPauseUi);
-    player.addEventListener("loadedmetadata", updateTimeUi);
-    player.addEventListener("timeupdate", () => {
-      updateTimeUi();
-
-      if (watched50Tracked) return;
-      const duration = Number(player.duration || 0);
-      const current = Number(player.currentTime || 0);
-      if (!duration || duration <= 0) return;
-
-      if (current / duration >= 0.5) {
-        watched50Tracked = true;
-        emit("sm:video_watched_50", {
-          item_id: getVideoId(move),
-          item_type: "move",
-          title: move?.title || "Move video"
-        });
-      }
-    });
-
-    player.addEventListener("ended", () => {
+    if (player) {
+      player.play().catch(() => {});
       updatePlayPauseUi();
       updateTimeUi();
+    }
+
+    return () => {
+      try {
+        player?.pause();
+      } catch (_) {}
+
+      if (videoWrap) {
+        videoWrap.removeEventListener("click", onVideoTap);
+      }
+
+      player?.removeEventListener("play", onPlay);
+      player?.removeEventListener("pause", onPause);
+      player?.removeEventListener("loadedmetadata", updateTimeUi);
+      player?.removeEventListener("timeupdate", onTimeUpdate);
+      player?.removeEventListener("ended", onEnded);
+
+      if (removeFsBindings) removeFsBindings();
+      if (removeRotateHintBindings) removeRotateHintBindings();
+      setFsUiHidden(false);
+    };
+  }
+
+  async function openPlayer(index, options = {}) {
+    if (!filtered.length) return;
+
+    const preservePlanReturn = options.preservePlanReturn === true;
+    returnToPlanAfterClose = preservePlanReturn ? true : false;
+
+    const item = filtered[index];
+    if (!item || isPlan(item)) return;
+
+    try { modal._cleanup && modal._cleanup(); } catch (_) {}
+    modal._cleanup = null;
+
+    currentIndex = index;
+    const video = filtered[currentIndex];
+    const src = normalizeUrl(video?.videoUrl || video?.video_url);
+    if (!src) return;
+
+    emit("sm:move_opened", {
+      item_id: getVideoId(video),
+      item_type: "move",
+      title: video?.title || ""
+    });
+
+    buildVideoPlayer(video);
+    window.scrollTo(0, 0);
+    setPlayerViewportHeight();
+    setModal(true);
+
+    const player = $("playerVideo");
+    const closeBtn = $("playerClose");
+    const prevBtn = $("prevVideoBtn");
+    const nextBtn = $("nextVideoBtn");
+    const fsBtn = $("fsBtn");
+    const playPauseBtn = $("playPauseBtn");
+    const playerSeek = $("playerSeek");
+    const playerTime = $("playerTime");
+    const videoWrap = player?.closest(".player__videoWrap");
+    const controls = $("playerControls");
+
+    const goPrev = () => {
+      for (let i = currentIndex - 1; i >= 0; i--) {
+        if (!isPlan(filtered[i])) {
+          return openPlayer(i, { preservePlanReturn: returnToPlanAfterClose === true });
+        }
+      }
+    };
+
+    const goNext = () => {
+      for (let i = currentIndex + 1; i < filtered.length; i++) {
+        if (!isPlan(filtered[i])) {
+          return openPlayer(i, { preservePlanReturn: returnToPlanAfterClose === true });
+        }
+      }
+    };
+
+    const onBackdrop = () => closeModal();
+    modalBackdrop.addEventListener("click", onBackdrop);
+
+    modal._cleanup = () => {
+      modalBackdrop.removeEventListener("click", onBackdrop);
+      playerCleanup();
+    };
+
+    const playerCleanup = bindPlayerUi({
+      player,
+      playPauseBtn,
+      playerSeek,
+      playerTime,
+      closeBtn,
+      prevBtn,
+      nextBtn,
+      fsBtn,
+      videoWrap,
+      controls,
+      onPrev: goPrev,
+      onNext: goNext,
+      onClose: closeModal,
+      analyticsId: getVideoId(video),
+      analyticsTitle: video?.title || ""
     });
   }
 
-  const onBackdrop = () => closeModal();
+  // ---------------- External move-player bridge ----------------
+  window.addEventListener("sm:open-move-player", (e) => {
+    returnToPlanAfterClose = true;
 
-  if (closeBtn) closeBtn.addEventListener("click", closeModal);
-  if (prevBtn) prevBtn.style.display = "none";
-  if (nextBtn) nextBtn.style.display = "none";
+    const move = e.detail?.move;
+    if (!move) return;
 
-  if (playPauseBtn) {
-    playPauseBtn.addEventListener("click", () => {
-      if (!player) return;
-      if (player.paused) {
-        player.play().catch(() => {});
-      } else {
-        player.pause();
-      }
-    });
-  }
+    const directUrl = normalizeUrl(move?.videoUrl || move?.video_url || "");
+    if (!directUrl) return;
 
-  if (playerSeek && player) {
-    playerSeek.addEventListener("pointerdown", () => {
-      isSeeking = true;
-    });
+    const idx = filtered.findIndex(
+      (x) => !isPlan(x) && String(getVideoId(x)) === String(getVideoId(move))
+    );
 
-    playerSeek.addEventListener("pointerup", () => {
-      const duration = Number(player.duration || 0);
-      const value = Number(playerSeek.value || 0);
-      if (duration > 0) {
-        player.currentTime = (value / 100) * duration;
-      }
-      isSeeking = false;
-      updateTimeUi();
+    if (idx >= 0) {
+      openPlayer(idx, { preservePlanReturn: true });
+      return;
+    }
+
+    try { modal._cleanup && modal._cleanup(); } catch (_) {}
+    modal._cleanup = null;
+
+    emit("sm:move_opened", {
+      item_id: getVideoId(move),
+      item_type: "move",
+      title: move?.title || "Move video"
     });
 
-    playerSeek.addEventListener("input", () => {
-      const duration = Number(player.duration || 0);
-      const value = Number(playerSeek.value || 0);
-      const previewTime = duration > 0 ? (value / 100) * duration : 0;
-
-      if (playerTime) {
-        playerTime.textContent = `${formatPlayerTime(previewTime)} / ${formatPlayerTime(duration)}`;
-      }
+    buildVideoPlayer({
+      id: move?.id || directUrl,
+      title: move?.title || "Move video",
+      videoUrl: directUrl,
+      video_url: directUrl,
+      thumb: move?.thumb || FALLBACK_THUMB,
+      duration: move?.duration || ""
     });
 
-    playerSeek.addEventListener("change", () => {
-      const duration = Number(player.duration || 0);
-      const value = Number(playerSeek.value || 0);
-      if (duration > 0) {
-        player.currentTime = (value / 100) * duration;
-      }
-      isSeeking = false;
-      updateTimeUi();
+    window.scrollTo(0, 0);
+    setPlayerViewportHeight();
+    setModal(true);
+
+    const player = $("playerVideo");
+    const closeBtn = $("playerClose");
+    const prevBtn = $("prevVideoBtn");
+    const nextBtn = $("nextVideoBtn");
+    const fsBtn = $("fsBtn");
+    const playPauseBtn = $("playPauseBtn");
+    const playerSeek = $("playerSeek");
+    const playerTime = $("playerTime");
+    const videoWrap = player?.closest(".player__videoWrap");
+    const controls = $("playerControls");
+
+    if (prevBtn) prevBtn.style.display = "none";
+    if (nextBtn) nextBtn.style.display = "none";
+
+    const onBackdrop = () => closeModal();
+    modalBackdrop.addEventListener("click", onBackdrop);
+
+    modal._cleanup = () => {
+      modalBackdrop.removeEventListener("click", onBackdrop);
+      playerCleanup();
+    };
+
+    const playerCleanup = bindPlayerUi({
+      player,
+      playPauseBtn,
+      playerSeek,
+      playerTime,
+      closeBtn,
+      prevBtn,
+      nextBtn,
+      fsBtn,
+      videoWrap,
+      controls,
+      onPrev: null,
+      onNext: null,
+      onClose: closeModal,
+      analyticsId: getVideoId(move),
+      analyticsTitle: move?.title || "Move video"
     });
-  }
+  });
 
-  let removeFsBindings = bindFullscreenState(player);
-  let removeRotateHintBindings = bindRotateHint();
-
-  if (fsBtn) {
-    fsBtn.addEventListener("click", async () => {
-      if (isElementFullscreen(modal)) {
-        await exitPlayerFullscreen();
-      } else {
-        await enterPlayerFullscreen(player);
-      }
-    });
-  }
-
-  modalBackdrop.addEventListener("click", onBackdrop);
-
-  if (player) {
-    player.play().catch(() => {});
-    updatePlayPauseUi();
-    updateTimeUi();
-  }
-
-  modal._cleanup = () => {
-  modalBackdrop.removeEventListener("click", onBackdrop);
-  try { player && player.pause(); } catch (_) {}
-  if (removeFsBindings) removeFsBindings();
-  if (removeRotateHintBindings) removeRotateHintBindings();
-  setFsUiHidden(false);
-};
-});
   // ---------------- Grid click ----------------
   grid.addEventListener("click", async (e) => {
     const card = e.target.closest(".card, .cardPlan");
