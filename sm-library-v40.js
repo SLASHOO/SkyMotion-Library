@@ -912,136 +912,111 @@
   }
 
   async function openPlayer(index, options = {}) {
-    if (!filtered.length) return;
+  if (!filtered.length) return;
 
-    const preservePlanReturn = options.preservePlanReturn === true;
-    returnToPlanAfterClose = preservePlanReturn ? true : false;
+  const preservePlanReturn = options.preservePlanReturn === true;
+  returnToPlanAfterClose = preservePlanReturn ? true : false;
 
-    const item = filtered[index];
-    if (!item || isPlan(item)) return;
+  const item = filtered[index];
+  if (!item || isPlan(item)) return;
 
-    try { modal._cleanup && modal._cleanup(); } catch (_) {}
-    modal._cleanup = null;
+  try { modal._cleanup && modal._cleanup(); } catch (_) {}
+  modal._cleanup = null;
 
-    currentIndex = index;
-    const video = filtered[currentIndex];
-    const src = normalizeUrl(video?.videoUrl || video?.video_url);
-    if (!src) return;
+  currentIndex = index;
+  const video = filtered[currentIndex];
+  const src = normalizeUrl(video?.videoUrl || video?.video_url);
+  if (!src) return;
 
-    emit("sm:move_opened", {
-      item_id: getVideoId(video),
-      item_type: "move",
-      title: video?.title || ""
+  emit("sm:move_opened", {
+    item_id: getVideoId(video),
+    item_type: "move",
+    title: video?.title || ""
+  });
+
+  buildVideoPlayer(video);
+  window.scrollTo(0, 0);
+  setPlayerViewportHeight();
+  setModal(true);
+
+  const player = $("playerVideo");
+  const closeBtn = $("playerClose");
+  const prevBtn = $("prevVideoBtn");
+  const nextBtn = $("nextVideoBtn");
+  const fsBtn = $("fsBtn");
+
+  let startedTracked = false;
+  let watched50Tracked = false;
+
+  if (player) {
+    player.addEventListener("play", () => {
+      if (startedTracked) return;
+      startedTracked = true;
+
+      emit("sm:video_started", {
+        item_id: getVideoId(video),
+        item_type: "move",
+        title: video?.title || ""
+      });
     });
 
-    buildVideoPlayer(video);
-    window.scrollTo(0, 0);
-    setPlayerViewportHeight();
-    setModal(true);
+    player.addEventListener("timeupdate", () => {
+      if (watched50Tracked) return;
+      const duration = Number(player.duration || 0);
+      const current = Number(player.currentTime || 0);
+      if (!duration || duration <= 0) return;
 
-    const player = $("playerVideo");
-    const closeBtn = $("playerClose");
-    const prevBtn = $("prevVideoBtn");
-    const nextBtn = $("nextVideoBtn");
-    const back10 = $("skipBackBtn");
-    const fwd10 = $("skipFwdBtn");
-    const fsBtn = $("fsBtn");
-    const saveMoveBtn = $("saveMoveBtn");
-
-    let startedTracked = false;
-    let watched50Tracked = false;
-
-    if (player) {
-      player.addEventListener("play", () => {
-        if (startedTracked) return;
-        startedTracked = true;
-
-        emit("sm:video_started", {
+      if (current / duration >= 0.5) {
+        watched50Tracked = true;
+        emit("sm:video_watched_50", {
           item_id: getVideoId(video),
           item_type: "move",
           title: video?.title || ""
         });
-      });
-
-      player.addEventListener("timeupdate", () => {
-        if (watched50Tracked) return;
-        const duration = Number(player.duration || 0);
-        const current = Number(player.currentTime || 0);
-        if (!duration || duration <= 0) return;
-
-        if (current / duration >= 0.5) {
-          watched50Tracked = true;
-          emit("sm:video_watched_50", {
-            item_id: getVideoId(video),
-            item_type: "move",
-            title: video?.title || ""
-          });
-        }
-      });
-    }
-
-    const goPrev = () => {
-      for (let i = currentIndex - 1; i >= 0; i--) {
-        if (!isPlan(filtered[i])) return openPlayer(i);
       }
-    };
-
-    const goNext = () => {
-      for (let i = currentIndex + 1; i < filtered.length; i++) {
-        if (!isPlan(filtered[i])) return openPlayer(i);
-      }
-    };
-
-    const onBackdrop = () => closeModal();
-
-    if (closeBtn) closeBtn.addEventListener("click", closeModal);
-    if (prevBtn) prevBtn.addEventListener("click", goPrev);
-    if (nextBtn) nextBtn.addEventListener("click", goNext);
-
-    if (back10) {
-      back10.addEventListener("click", () => {
-        if (!player) return;
-        player.currentTime = Math.max(0, (player.currentTime || 0) - 10);
-      });
-    }
-
-    if (fwd10) {
-      fwd10.addEventListener("click", () => {
-        if (!player) return;
-        player.currentTime = Math.min(player.duration || 999999, (player.currentTime || 0) + 10);
-      });
-    }
-
-    if (saveMoveBtn) {
-      saveMoveBtn.addEventListener("click", async () => {
-        const nowSaved = await toggleSaved(video);
-        saveMoveBtn.textContent = nowSaved ? "Saved" : "Save";
-        syncCardSaveUI(video);
-      });
-    }
-
-    let removeFsBindings = bindFullscreenState(player);
-
-    if (fsBtn) {
-      fsBtn.addEventListener("click", async () => {
-        if (isElementFullscreen(modal)) {
-          await exitPlayerFullscreen();
-        } else {
-          await enterPlayerFullscreen(player);
-        }
-      });
-    }
-
-    modalBackdrop.addEventListener("click", onBackdrop);
-    player && player.play().catch(() => {});
-
-    modal._cleanup = () => {
-      modalBackdrop.removeEventListener("click", onBackdrop);
-      try { player && player.pause(); } catch (_) {}
-      if (removeFsBindings) removeFsBindings();
-      setFsUiHidden(false);
-    };
+    });
   }
+
+  const goPrev = () => {
+    for (let i = currentIndex - 1; i >= 0; i--) {
+      if (!isPlan(filtered[i])) return openPlayer(i);
+    }
+  };
+
+  const goNext = () => {
+    for (let i = currentIndex + 1; i < filtered.length; i++) {
+      if (!isPlan(filtered[i])) return openPlayer(i);
+    }
+  };
+
+  const onBackdrop = () => closeModal();
+
+  if (closeBtn) closeBtn.addEventListener("click", closeModal);
+  if (prevBtn) prevBtn.addEventListener("click", goPrev);
+  if (nextBtn) nextBtn.addEventListener("click", goNext);
+
+  let removeFsBindings = bindFullscreenState(player);
+
+  if (fsBtn) {
+    fsBtn.addEventListener("click", async () => {
+      if (isElementFullscreen(modal)) {
+        await exitPlayerFullscreen();
+      } else {
+        await enterPlayerFullscreen(player);
+      }
+    });
+  }
+
+  modalBackdrop.addEventListener("click", onBackdrop);
+  player && player.play().catch(() => {});
+
+  modal._cleanup = () => {
+    modalBackdrop.removeEventListener("click", onBackdrop);
+    try { player && player.pause(); } catch (_) {}
+    if (removeFsBindings) removeFsBindings();
+    setFsUiHidden(false);
+  };
+}
 
   // ---------------- External move-player bridge ----------------
   window.addEventListener("sm:open-move-player", (e) => {
@@ -1080,94 +1055,75 @@
       duration: move?.duration || ""
     });
 
-    window.scrollTo(0, 0);
-    setPlayerViewportHeight();
-    setModal(true);
+window.scrollTo(0, 0);
+setPlayerViewportHeight();
+setModal(true);
 
-    const player = $("playerVideo");
-    const closeBtn = $("playerClose");
-    const prevBtn = $("prevVideoBtn");
-    const nextBtn = $("nextVideoBtn");
-    const back10 = $("skipBackBtn");
-    const fwd10 = $("skipFwdBtn");
-    const fsBtn = $("fsBtn");
-    const saveMoveBtn = $("saveMoveBtn");
+const player = $("playerVideo");
+const closeBtn = $("playerClose");
+const prevBtn = $("prevVideoBtn");
+const nextBtn = $("nextVideoBtn");
+const fsBtn = $("fsBtn");
 
-    let startedTracked = false;
-    let watched50Tracked = false;
+let startedTracked = false;
+let watched50Tracked = false;
 
-    if (player) {
-      player.addEventListener("play", () => {
-        if (startedTracked) return;
-        startedTracked = true;
+if (player) {
+  player.addEventListener("play", () => {
+    if (startedTracked) return;
+    startedTracked = true;
 
-        emit("sm:video_started", {
-          item_id: getVideoId(move),
-          item_type: "move",
-          title: move?.title || "Move video"
-        });
-      });
-
-      player.addEventListener("timeupdate", () => {
-        if (watched50Tracked) return;
-        const duration = Number(player.duration || 0);
-        const current = Number(player.currentTime || 0);
-        if (!duration || duration <= 0) return;
-
-        if (current / duration >= 0.5) {
-          watched50Tracked = true;
-          emit("sm:video_watched_50", {
-            item_id: getVideoId(move),
-            item_type: "move",
-            title: move?.title || "Move video"
-          });
-        }
-      });
-    }
-
-    const onBackdrop = () => closeModal();
-
-    if (closeBtn) closeBtn.addEventListener("click", closeModal);
-    if (prevBtn) prevBtn.style.display = "none";
-    if (nextBtn) nextBtn.style.display = "none";
-    if (saveMoveBtn) saveMoveBtn.style.display = "none";
-
-    if (back10) {
-      back10.addEventListener("click", () => {
-        if (!player) return;
-        player.currentTime = Math.max(0, (player.currentTime || 0) - 10);
-      });
-    }
-
-    if (fwd10) {
-      fwd10.addEventListener("click", () => {
-        if (!player) return;
-        player.currentTime = Math.min(player.duration || 999999, (player.currentTime || 0) + 10);
-      });
-    }
-
-    let removeFsBindings = bindFullscreenState(player);
-
-    if (fsBtn) {
-      fsBtn.addEventListener("click", async () => {
-        if (isElementFullscreen(modal)) {
-          await exitPlayerFullscreen();
-        } else {
-          await enterPlayerFullscreen(player);
-        }
-      });
-    }
-
-    modalBackdrop.addEventListener("click", onBackdrop);
-    player && player.play().catch(() => {});
-
-    modal._cleanup = () => {
-      modalBackdrop.removeEventListener("click", onBackdrop);
-      try { player && player.pause(); } catch (_) {}
-      if (removeFsBindings) removeFsBindings();
-      setFsUiHidden(false);
-    };
+    emit("sm:video_started", {
+      item_id: getVideoId(move),
+      item_type: "move",
+      title: move?.title || "Move video"
+    });
   });
+
+  player.addEventListener("timeupdate", () => {
+    if (watched50Tracked) return;
+    const duration = Number(player.duration || 0);
+    const current = Number(player.currentTime || 0);
+    if (!duration || duration <= 0) return;
+
+    if (current / duration >= 0.5) {
+      watched50Tracked = true;
+      emit("sm:video_watched_50", {
+        item_id: getVideoId(move),
+        item_type: "move",
+        title: move?.title || "Move video"
+      });
+    }
+  });
+}
+
+const onBackdrop = () => closeModal();
+
+if (closeBtn) closeBtn.addEventListener("click", closeModal);
+if (prevBtn) prevBtn.style.display = "none";
+if (nextBtn) nextBtn.style.display = "none";
+
+let removeFsBindings = bindFullscreenState(player);
+
+if (fsBtn) {
+  fsBtn.addEventListener("click", async () => {
+    if (isElementFullscreen(modal)) {
+      await exitPlayerFullscreen();
+    } else {
+      await enterPlayerFullscreen(player);
+    }
+  });
+}
+
+modalBackdrop.addEventListener("click", onBackdrop);
+player && player.play().catch(() => {});
+
+modal._cleanup = () => {
+  modalBackdrop.removeEventListener("click", onBackdrop);
+  try { player && player.pause(); } catch (_) {}
+  if (removeFsBindings) removeFsBindings();
+  setFsUiHidden(false);
+};
 
   // ---------------- Grid click ----------------
   grid.addEventListener("click", async (e) => {
