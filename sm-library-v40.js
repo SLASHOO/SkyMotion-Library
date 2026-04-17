@@ -906,6 +906,7 @@
     </div>
   `;
 }
+
   async function openPlayer(index, options = {}) {
   if (!filtered.length) return;
 
@@ -1012,9 +1013,44 @@
     setFsUiHidden(false);
   };
 }
-
   // ---------------- External move-player bridge ----------------
-  window.scrollTo(0, 0);
+  window.addEventListener("sm:open-move-player", (e) => {
+    returnToPlanAfterClose = true;
+
+    const move = e.detail?.move;
+    if (!move) return;
+
+    const directUrl = normalizeUrl(move?.videoUrl || move?.video_url || "");
+    if (!directUrl) return;
+
+    const idx = filtered.findIndex(
+      (x) => !isPlan(x) && String(getVideoId(x)) === String(getVideoId(move))
+    );
+
+    if (idx >= 0) {
+      openPlayer(idx, { preservePlanReturn: true });
+      return;
+    }
+
+    try { modal._cleanup && modal._cleanup(); } catch (_) {}
+    modal._cleanup = null;
+
+    emit("sm:move_opened", {
+      item_id: getVideoId(move),
+      item_type: "move",
+      title: move?.title || "Move video"
+    });
+
+    buildVideoPlayer({
+      id: move?.id || directUrl,
+      title: move?.title || "Move video",
+      videoUrl: directUrl,
+      video_url: directUrl,
+      thumb: move?.thumb || FALLBACK_THUMB,
+      duration: move?.duration || ""
+    });
+
+    window.scrollTo(0, 0);
 setPlayerViewportHeight();
 setModal(true);
 
@@ -1083,7 +1119,6 @@ modal._cleanup = () => {
   if (removeFsBindings) removeFsBindings();
   setFsUiHidden(false);
 };
-
   // ---------------- Grid click ----------------
   grid.addEventListener("click", async (e) => {
     const card = e.target.closest(".card, .cardPlan");
