@@ -885,32 +885,27 @@
   let returnToPlanAfterClose = false;
 
   function buildVideoPlayer(video) {
-    const saved = isSaved(getVideoId(video));
-    const src = normalizeUrl(video?.videoUrl || video?.video_url);
+  const src = normalizeUrl(video?.videoUrl || video?.video_url);
 
-    modalContent.innerHTML = `
-      <div class="player">
-        <div class="player__top">
-          <div class="player__title">${escapeHtml(video?.title || "")}</div>
-          <button class="player__close" id="playerClose" type="button" aria-label="Close">×</button>
-        </div>
-
-        <video id="playerVideo" controls playsinline preload="metadata">
-          <source src="${escapeHtml(src)}" type="video/mp4">
-        </video>
-
-        <div class="player__bar">
-          <button class="btn" id="prevVideoBtn" type="button">Prev</button>
-          <button class="btn" id="skipBackBtn" type="button">-10s</button>
-          <button class="btn" id="skipFwdBtn" type="button">+10s</button>
-          <button class="btn" id="nextVideoBtn" type="button">Next</button>
-          <button class="btn" id="saveMoveBtn" type="button">${saved ? "Saved" : "Save"}</button>
-          <button class="btn" id="fsBtn" type="button">Fullscreen</button>
-        </div>
+  modalContent.innerHTML = `
+    <div class="player">
+      <div class="player__top">
+        <div class="player__title">${escapeHtml(video?.title || "")}</div>
+        <button class="player__close" id="playerClose" type="button" aria-label="Close">×</button>
       </div>
-    `;
-  }
 
+      <video id="playerVideo" controls playsinline preload="metadata">
+        <source src="${escapeHtml(src)}" type="video/mp4">
+      </video>
+
+      <div class="player__bar">
+        <button class="btn" id="prevVideoBtn" type="button">Prev</button>
+        <button class="btn" id="nextVideoBtn" type="button">Next</button>
+        <button class="btn" id="fsBtn" type="button">Fullscreen</button>
+      </div>
+    </div>
+  `;
+}
   async function openPlayer(index, options = {}) {
   if (!filtered.length) return;
 
@@ -1019,43 +1014,7 @@
 }
 
   // ---------------- External move-player bridge ----------------
-  window.addEventListener("sm:open-move-player", (e) => {
-    returnToPlanAfterClose = true;
-
-    const move = e.detail?.move;
-    if (!move) return;
-
-    const directUrl = normalizeUrl(move?.videoUrl || move?.video_url || "");
-    if (!directUrl) return;
-
-    const idx = filtered.findIndex(
-      (x) => !isPlan(x) && String(getVideoId(x)) === String(getVideoId(move))
-    );
-
-    if (idx >= 0) {
-      openPlayer(idx, { preservePlanReturn: true });
-      return;
-    }
-
-    try { modal._cleanup && modal._cleanup(); } catch (_) {}
-    modal._cleanup = null;
-
-    emit("sm:move_opened", {
-      item_id: getVideoId(move),
-      item_type: "move",
-      title: move?.title || "Move video"
-    });
-
-    buildVideoPlayer({
-      id: move?.id || directUrl,
-      title: move?.title || "Move video",
-      videoUrl: directUrl,
-      video_url: directUrl,
-      thumb: move?.thumb || FALLBACK_THUMB,
-      duration: move?.duration || ""
-    });
-
-window.scrollTo(0, 0);
+  window.scrollTo(0, 0);
 setPlayerViewportHeight();
 setModal(true);
 
