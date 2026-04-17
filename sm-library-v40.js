@@ -89,7 +89,64 @@
       .replaceAll('"', "&quot;")
       .replaceAll("'", "&#039;");
   }
+  function formatPlayerTime(sec) {
+  const n = Number(sec || 0);
+  if (!Number.isFinite(n) || n < 0) return "0:00";
+  const m = Math.floor(n / 60);
+  const s = Math.floor(n % 60);
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+  function isMobilePlayerUi() {
+  return window.matchMedia("(max-width: 900px)").matches;
+}
 
+function isPortraitViewport() {
+  return window.matchMedia("(orientation: portrait)").matches;
+}
+
+function shouldShowRotateHint() {
+  return isMobilePlayerUi() && isPortraitViewport();
+}
+
+function setRotateHintVisible(visible) {
+  const hint = $("rotateHint");
+  if (!hint) return;
+  hint.classList.toggle("is-visible", !!visible);
+}
+
+function bindRotateHint() {
+  let hideTimer = null;
+
+  const update = () => {
+    setRotateHintVisible(shouldShowRotateHint());
+  };
+
+  const showTemporarily = () => {
+    clearTimeout(hideTimer);
+    update();
+
+    if (shouldShowRotateHint()) {
+      hideTimer = setTimeout(() => {
+        setRotateHintVisible(false);
+      }, 2600);
+    }
+  };
+
+  const onResize = () => update();
+  const onOrientation = () => update();
+
+  window.addEventListener("resize", onResize);
+  window.addEventListener("orientationchange", onOrientation);
+
+  showTemporarily();
+
+  return () => {
+    clearTimeout(hideTimer);
+    window.removeEventListener("resize", onResize);
+    window.removeEventListener("orientationchange", onOrientation);
+    setRotateHintVisible(false);
+  };
+}
   function safeText(el, t) {
     if (el) el.textContent = String(t ?? "");
   }
@@ -894,19 +951,49 @@
         <button class="player__close" id="playerClose" type="button" aria-label="Close">×</button>
       </div>
 
-      <video id="playerVideo" controls playsinline preload="metadata">
-        <source src="${escapeHtml(src)}" type="video/mp4">
-      </video>
+      <div class="player__videoWrap">
+        <video id="playerVideo" playsinline preload="metadata">
+          <source src="${escapeHtml(src)}" type="video/mp4">
+        </video>
 
-      <div class="player__bar">
-        <button class="btn" id="prevVideoBtn" type="button">Prev</button>
-        <button class="btn" id="nextVideoBtn" type="button">Next</button>
-        <button class="btn" id="fsBtn" type="button">Fullscreen</button>
+        <div class="player__rotateHint" id="rotateHint" aria-hidden="true">
+          Rotate phone for better view
+        </div>
+
+        <div class="player__controls" id="playerControls">
+          <div class="player__progressWrap">
+            <input
+              id="playerSeek"
+              class="player__seek"
+              type="range"
+              min="0"
+              max="100"
+              step="0.1"
+              value="0"
+              aria-label="Video progress"
+            >
+          </div>
+
+          <div class="player__bar">
+            <div class="player__barLeft">
+              <button class="btn" id="playPauseBtn" type="button">Pause</button>
+              <div class="player__time" id="playerTime">0:00 / 0:00</div>
+            </div>
+
+            <div class="player__barCenter">
+              <button class="btn" id="prevVideoBtn" type="button">Prev</button>
+              <button class="btn" id="nextVideoBtn" type="button">Next</button>
+            </div>
+
+            <div class="player__barRight">
+              <button class="btn" id="fsBtn" type="button">Fullscreen</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   `;
 }
-
   async function openPlayer(index, options = {}) {
   if (!filtered.length) return;
 
@@ -940,12 +1027,37 @@
   const prevBtn = $("prevVideoBtn");
   const nextBtn = $("nextVideoBtn");
   const fsBtn = $("fsBtn");
+  const playPauseBtn = $("playPauseBtn");
+  const playerSeek = $("playerSeek");
+  const playerTime = $("playerTime");
 
   let startedTracked = false;
   let watched50Tracked = false;
+  let isSeeking = false;
+
+  function updateTimeUi() {
+    if (!player || !playerTime || !playerSeek) return;
+
+    const duration = Number(player.duration || 0);
+    const current = Number(player.currentTime || 0);
+
+    playerTime.textContent = `${formatPlayerTime(current)} / ${formatPlayerTime(duration)}`;
+
+    if (!isSeeking) {
+      const progress = duration > 0 ? (current / duration) * 100 : 0;
+      playerSeek.value = String(progress);
+    }
+  }
+
+  function updatePlayPauseUi() {
+    if (!playPauseBtn || !player) return;
+    playPauseBtn.textContent = player.paused ? "Play" : "Pause";
+  }
 
   if (player) {
     player.addEventListener("play", () => {
+      updatePlayPauseUi();
+
       if (startedTracked) return;
       startedTracked = true;
 
@@ -956,7 +1068,11 @@
       });
     });
 
+    player.addEventListener("pause", updatePlayPauseUi);
+    player.addEventListener("loadedmetadata", updateTimeUi);
     player.addEventListener("timeupdate", () => {
+      updateTimeUi();
+
       if (watched50Tracked) return;
       const duration = Number(player.duration || 0);
       const current = Number(player.currentTime || 0);
@@ -971,19 +1087,28 @@
         });
       }
     });
+
+    player.addEventListener("ended", () => {
+      updatePlayPauseUi();
+      updateTimeUi();
+    });
   }
 
   const goPrev = () => {
-    for (let i = currentIndex - 1; i >= 0; i--) {
-      if (!isPlan(filtered[i])) return openPlayer(i);
+  for (let i = currentIndex - 1; i >= 0; i--) {
+    if (!isPlan(filtered[i])) {
+      return openPlayer(i, { preservePlanReturn: returnToPlanAfterClose === true });
     }
-  };
+  }
+};
 
-  const goNext = () => {
-    for (let i = currentIndex + 1; i < filtered.length; i++) {
-      if (!isPlan(filtered[i])) return openPlayer(i);
+const goNext = () => {
+  for (let i = currentIndex + 1; i < filtered.length; i++) {
+    if (!isPlan(filtered[i])) {
+      return openPlayer(i, { preservePlanReturn: returnToPlanAfterClose === true });
     }
-  };
+  }
+};
 
   const onBackdrop = () => closeModal();
 
@@ -991,7 +1116,55 @@
   if (prevBtn) prevBtn.addEventListener("click", goPrev);
   if (nextBtn) nextBtn.addEventListener("click", goNext);
 
+  if (playPauseBtn) {
+    playPauseBtn.addEventListener("click", () => {
+      if (!player) return;
+      if (player.paused) {
+        player.play().catch(() => {});
+      } else {
+        player.pause();
+      }
+    });
+  }
+
+  if (playerSeek && player) {
+    playerSeek.addEventListener("pointerdown", () => {
+      isSeeking = true;
+    });
+
+    playerSeek.addEventListener("pointerup", () => {
+      const duration = Number(player.duration || 0);
+      const value = Number(playerSeek.value || 0);
+      if (duration > 0) {
+        player.currentTime = (value / 100) * duration;
+      }
+      isSeeking = false;
+      updateTimeUi();
+    });
+
+    playerSeek.addEventListener("input", () => {
+      const duration = Number(player.duration || 0);
+      const value = Number(playerSeek.value || 0);
+      const previewTime = duration > 0 ? (value / 100) * duration : 0;
+
+      if (playerTime) {
+        playerTime.textContent = `${formatPlayerTime(previewTime)} / ${formatPlayerTime(duration)}`;
+      }
+    });
+
+    playerSeek.addEventListener("change", () => {
+      const duration = Number(player.duration || 0);
+      const value = Number(playerSeek.value || 0);
+      if (duration > 0) {
+        player.currentTime = (value / 100) * duration;
+      }
+      isSeeking = false;
+      updateTimeUi();
+    });
+  }
+
   let removeFsBindings = bindFullscreenState(player);
+    let removeRotateHintBindings = bindRotateHint();
 
   if (fsBtn) {
     fsBtn.addEventListener("click", async () => {
@@ -1004,14 +1177,20 @@
   }
 
   modalBackdrop.addEventListener("click", onBackdrop);
-  player && player.play().catch(() => {});
+
+  if (player) {
+    player.play().catch(() => {});
+    updatePlayPauseUi();
+    updateTimeUi();
+  }
 
   modal._cleanup = () => {
-    modalBackdrop.removeEventListener("click", onBackdrop);
-    try { player && player.pause(); } catch (_) {}
-    if (removeFsBindings) removeFsBindings();
-    setFsUiHidden(false);
-  };
+  modalBackdrop.removeEventListener("click", onBackdrop);
+  try { player && player.pause(); } catch (_) {}
+  if (removeFsBindings) removeFsBindings();
+  if (removeRotateHintBindings) removeRotateHintBindings();
+  setFsUiHidden(false);
+};
 }
   // ---------------- External move-player bridge ----------------
 window.addEventListener("sm:open-move-player", (e) => {
@@ -1059,12 +1238,37 @@ window.addEventListener("sm:open-move-player", (e) => {
   const prevBtn = $("prevVideoBtn");
   const nextBtn = $("nextVideoBtn");
   const fsBtn = $("fsBtn");
+  const playPauseBtn = $("playPauseBtn");
+  const playerSeek = $("playerSeek");
+  const playerTime = $("playerTime");
 
   let startedTracked = false;
   let watched50Tracked = false;
+  let isSeeking = false;
+
+  function updateTimeUi() {
+    if (!player || !playerTime || !playerSeek) return;
+
+    const duration = Number(player.duration || 0);
+    const current = Number(player.currentTime || 0);
+
+    playerTime.textContent = `${formatPlayerTime(current)} / ${formatPlayerTime(duration)}`;
+
+    if (!isSeeking) {
+      const progress = duration > 0 ? (current / duration) * 100 : 0;
+      playerSeek.value = String(progress);
+    }
+  }
+
+  function updatePlayPauseUi() {
+    if (!playPauseBtn || !player) return;
+    playPauseBtn.textContent = player.paused ? "Play" : "Pause";
+  }
 
   if (player) {
     player.addEventListener("play", () => {
+      updatePlayPauseUi();
+
       if (startedTracked) return;
       startedTracked = true;
 
@@ -1075,7 +1279,11 @@ window.addEventListener("sm:open-move-player", (e) => {
       });
     });
 
+    player.addEventListener("pause", updatePlayPauseUi);
+    player.addEventListener("loadedmetadata", updateTimeUi);
     player.addEventListener("timeupdate", () => {
+      updateTimeUi();
+
       if (watched50Tracked) return;
       const duration = Number(player.duration || 0);
       const current = Number(player.currentTime || 0);
@@ -1090,6 +1298,11 @@ window.addEventListener("sm:open-move-player", (e) => {
         });
       }
     });
+
+    player.addEventListener("ended", () => {
+      updatePlayPauseUi();
+      updateTimeUi();
+    });
   }
 
   const onBackdrop = () => closeModal();
@@ -1098,7 +1311,55 @@ window.addEventListener("sm:open-move-player", (e) => {
   if (prevBtn) prevBtn.style.display = "none";
   if (nextBtn) nextBtn.style.display = "none";
 
+  if (playPauseBtn) {
+    playPauseBtn.addEventListener("click", () => {
+      if (!player) return;
+      if (player.paused) {
+        player.play().catch(() => {});
+      } else {
+        player.pause();
+      }
+    });
+  }
+
+  if (playerSeek && player) {
+    playerSeek.addEventListener("pointerdown", () => {
+      isSeeking = true;
+    });
+
+    playerSeek.addEventListener("pointerup", () => {
+      const duration = Number(player.duration || 0);
+      const value = Number(playerSeek.value || 0);
+      if (duration > 0) {
+        player.currentTime = (value / 100) * duration;
+      }
+      isSeeking = false;
+      updateTimeUi();
+    });
+
+    playerSeek.addEventListener("input", () => {
+      const duration = Number(player.duration || 0);
+      const value = Number(playerSeek.value || 0);
+      const previewTime = duration > 0 ? (value / 100) * duration : 0;
+
+      if (playerTime) {
+        playerTime.textContent = `${formatPlayerTime(previewTime)} / ${formatPlayerTime(duration)}`;
+      }
+    });
+
+    playerSeek.addEventListener("change", () => {
+      const duration = Number(player.duration || 0);
+      const value = Number(playerSeek.value || 0);
+      if (duration > 0) {
+        player.currentTime = (value / 100) * duration;
+      }
+      isSeeking = false;
+      updateTimeUi();
+    });
+  }
+
   let removeFsBindings = bindFullscreenState(player);
+  let removeRotateHintBindings = bindRotateHint();
 
   if (fsBtn) {
     fsBtn.addEventListener("click", async () => {
@@ -1111,14 +1372,20 @@ window.addEventListener("sm:open-move-player", (e) => {
   }
 
   modalBackdrop.addEventListener("click", onBackdrop);
-  player && player.play().catch(() => {});
+
+  if (player) {
+    player.play().catch(() => {});
+    updatePlayPauseUi();
+    updateTimeUi();
+  }
 
   modal._cleanup = () => {
-    modalBackdrop.removeEventListener("click", onBackdrop);
-    try { player && player.pause(); } catch (_) {}
-    if (removeFsBindings) removeFsBindings();
-    setFsUiHidden(false);
-  };
+  modalBackdrop.removeEventListener("click", onBackdrop);
+  try { player && player.pause(); } catch (_) {}
+  if (removeFsBindings) removeFsBindings();
+  if (removeRotateHintBindings) removeRotateHintBindings();
+  setFsUiHidden(false);
+};
 });
   // ---------------- Grid click ----------------
   grid.addEventListener("click", async (e) => {
