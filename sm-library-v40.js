@@ -1014,111 +1014,112 @@
   };
 }
   // ---------------- External move-player bridge ----------------
-  window.addEventListener("sm:open-move-player", (e) => {
-    returnToPlanAfterClose = true;
+window.addEventListener("sm:open-move-player", (e) => {
+  returnToPlanAfterClose = true;
 
-    const move = e.detail?.move;
-    if (!move) return;
+  const move = e.detail?.move;
+  if (!move) return;
 
-    const directUrl = normalizeUrl(move?.videoUrl || move?.video_url || "");
-    if (!directUrl) return;
+  const directUrl = normalizeUrl(move?.videoUrl || move?.video_url || "");
+  if (!directUrl) return;
 
-    const idx = filtered.findIndex(
-      (x) => !isPlan(x) && String(getVideoId(x)) === String(getVideoId(move))
-    );
+  const idx = filtered.findIndex(
+    (x) => !isPlan(x) && String(getVideoId(x)) === String(getVideoId(move))
+  );
 
-    if (idx >= 0) {
-      openPlayer(idx, { preservePlanReturn: true });
-      return;
-    }
+  if (idx >= 0) {
+    openPlayer(idx, { preservePlanReturn: true });
+    return;
+  }
 
-    try { modal._cleanup && modal._cleanup(); } catch (_) {}
-    modal._cleanup = null;
+  try { modal._cleanup && modal._cleanup(); } catch (_) {}
+  modal._cleanup = null;
 
-    emit("sm:move_opened", {
-      item_id: getVideoId(move),
-      item_type: "move",
-      title: move?.title || "Move video"
-    });
-
-    buildVideoPlayer({
-      id: move?.id || directUrl,
-      title: move?.title || "Move video",
-      videoUrl: directUrl,
-      video_url: directUrl,
-      thumb: move?.thumb || FALLBACK_THUMB,
-      duration: move?.duration || ""
-    });
-
-    window.scrollTo(0, 0);
-setPlayerViewportHeight();
-setModal(true);
-
-const player = $("playerVideo");
-const closeBtn = $("playerClose");
-const prevBtn = $("prevVideoBtn");
-const nextBtn = $("nextVideoBtn");
-const fsBtn = $("fsBtn");
-
-let startedTracked = false;
-let watched50Tracked = false;
-
-if (player) {
-  player.addEventListener("play", () => {
-    if (startedTracked) return;
-    startedTracked = true;
-
-    emit("sm:video_started", {
-      item_id: getVideoId(move),
-      item_type: "move",
-      title: move?.title || "Move video"
-    });
+  emit("sm:move_opened", {
+    item_id: getVideoId(move),
+    item_type: "move",
+    title: move?.title || "Move video"
   });
 
-  player.addEventListener("timeupdate", () => {
-    if (watched50Tracked) return;
-    const duration = Number(player.duration || 0);
-    const current = Number(player.currentTime || 0);
-    if (!duration || duration <= 0) return;
+  buildVideoPlayer({
+    id: move?.id || directUrl,
+    title: move?.title || "Move video",
+    videoUrl: directUrl,
+    video_url: directUrl,
+    thumb: move?.thumb || FALLBACK_THUMB,
+    duration: move?.duration || ""
+  });
 
-    if (current / duration >= 0.5) {
-      watched50Tracked = true;
-      emit("sm:video_watched_50", {
+  window.scrollTo(0, 0);
+  setPlayerViewportHeight();
+  setModal(true);
+
+  const player = $("playerVideo");
+  const closeBtn = $("playerClose");
+  const prevBtn = $("prevVideoBtn");
+  const nextBtn = $("nextVideoBtn");
+  const fsBtn = $("fsBtn");
+
+  let startedTracked = false;
+  let watched50Tracked = false;
+
+  if (player) {
+    player.addEventListener("play", () => {
+      if (startedTracked) return;
+      startedTracked = true;
+
+      emit("sm:video_started", {
         item_id: getVideoId(move),
         item_type: "move",
         title: move?.title || "Move video"
       });
-    }
-  });
-}
+    });
 
-const onBackdrop = () => closeModal();
+    player.addEventListener("timeupdate", () => {
+      if (watched50Tracked) return;
+      const duration = Number(player.duration || 0);
+      const current = Number(player.currentTime || 0);
+      if (!duration || duration <= 0) return;
 
-if (closeBtn) closeBtn.addEventListener("click", closeModal);
-if (prevBtn) prevBtn.style.display = "none";
-if (nextBtn) nextBtn.style.display = "none";
+      if (current / duration >= 0.5) {
+        watched50Tracked = true;
+        emit("sm:video_watched_50", {
+          item_id: getVideoId(move),
+          item_type: "move",
+          title: move?.title || "Move video"
+        });
+      }
+    });
+  }
 
-let removeFsBindings = bindFullscreenState(player);
+  const onBackdrop = () => closeModal();
 
-if (fsBtn) {
-  fsBtn.addEventListener("click", async () => {
-    if (isElementFullscreen(modal)) {
-      await exitPlayerFullscreen();
-    } else {
-      await enterPlayerFullscreen(player);
-    }
-  });
-}
+  if (closeBtn) closeBtn.addEventListener("click", closeModal);
+  if (prevBtn) prevBtn.style.display = "none";
+  if (nextBtn) nextBtn.style.display = "none";
 
-modalBackdrop.addEventListener("click", onBackdrop);
-player && player.play().catch(() => {});
+  let removeFsBindings = bindFullscreenState(player);
 
-modal._cleanup = () => {
-  modalBackdrop.removeEventListener("click", onBackdrop);
-  try { player && player.pause(); } catch (_) {}
-  if (removeFsBindings) removeFsBindings();
-  setFsUiHidden(false);
-};
+  if (fsBtn) {
+    fsBtn.addEventListener("click", async () => {
+      if (isElementFullscreen(modal)) {
+        await exitPlayerFullscreen();
+      } else {
+        await enterPlayerFullscreen(player);
+      }
+    });
+  }
+
+  modalBackdrop.addEventListener("click", onBackdrop);
+  player && player.play().catch(() => {});
+
+  modal._cleanup = () => {
+    modalBackdrop.removeEventListener("click", onBackdrop);
+    try { player && player.pause(); } catch (_) {}
+    if (removeFsBindings) removeFsBindings();
+    setFsUiHidden(false);
+  };
+});
   // ---------------- Grid click ----------------
   grid.addEventListener("click", async (e) => {
     const card = e.target.closest(".card, .cardPlan");
