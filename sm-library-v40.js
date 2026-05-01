@@ -1,19 +1,4 @@
-/* =========================================================
-  SKYMOTION — LIBRARY v1 (STANDALONE) CLEAN
-  - Plans + Moves mixed by default
-  - OLD #modal = fullscreen video player only
-  - Plan viewer removed from this embed
-  - Plan cards dispatch event to external plan viewer
-  - Robust image fallback
-  - Scoped. Webflow-safe.
-  - FILTERS RESTORED
-  - FASTER INITIAL LOAD
-  - CLEANED FROM SESSION REMNANTS
-  - ORDERED CHAT FLOW
-  - LIGHT CHAT HISTORY
-  - LOADING SKELETON
-  - ANALYTICS EVENTS ADDED
-========================================================= */
+/* ========================================================= SKYMOTION — LIBRARY v1 (STANDALONE) CLEAN - Plans + Moves mixed by default - OLD #modal = fullscreen video player only - Plan viewer removed from this embed - Plan cards dispatch event to external plan viewer - Robust image fallback - Scoped. Webflow-safe. - FILTERS RESTORED - FASTER INITIAL LOAD - CLEANED FROM SESSION REMNANTS - ORDERED CHAT FLOW - LIGHT CHAT HISTORY - LOADING SKELETON - ANALYTICS EVENTS ADDED ========================================================= */
 
 (() => {
   "use strict";
@@ -22,7 +7,6 @@
 
   const FALLBACK_THUMB = "https://skymotion-cdn.b-cdn.net/thumb.jpg";
   const CDN_INDEX_URL = "https://skymotion-cdn.b-cdn.net/videos_index_v16.json";
-
   const API_BASE = String(window.SM_API_BASE || "https://skymotion.onrender.com").replace(/\/$/, "");
   const $ = (id) => document.getElementById(id);
 
@@ -35,7 +19,6 @@
 
   let libraryViewedSent = false;
 
-  // ---------------- DOM ----------------
   const openAssistantBtn = $("openAssistantBtn");
   const closeAssistantBtn = $("closeAssistantBtn");
   const assistantBackdropEl = $("assistantBackdrop");
@@ -46,6 +29,9 @@
   const matchCount = $("matchCount");
   const resetBtn = $("resetBtn");
   const backBtn = $("backBtn");
+  const filterStep = $("filterStep");
+  const showResultsBtn = $("showResultsBtn");
+  const backToResultsBtn = $("backToResultsBtn");
   const moreBtn = $("moreBtn");
   const resultsHead = $("resultsHead");
 
@@ -53,27 +39,14 @@
   const modalBackdrop = $("modalBackdrop");
   const modalContent = $("modalContent");
 
-  const required = {
-    assistant,
-    chat,
-    grid,
-    matchCount,
-    resetBtn,
-    modal,
-    modalBackdrop,
-    modalContent,
-  };
+  const required = { assistant, chat, grid, matchCount, resetBtn, modal, modalBackdrop, modalContent };
 
-  const missing = Object.entries(required)
-    .filter(([, el]) => !el)
-    .map(([name]) => name);
-
+  const missing = Object.entries(required).filter(([, el]) => !el).map(([name]) => name);
   if (missing.length) {
     console.warn("[SM] Missing required elements:", missing);
     return;
   }
 
-  // ---------------- Helpers ----------------
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   function setPlayerViewportHeight() {
@@ -96,72 +69,6 @@
     const m = Math.floor(n / 60);
     const s = Math.floor(n % 60);
     return `${m}:${String(s).padStart(2, "0")}`;
-  }
-
-  function isMobilePlayerUi() {
-    return window.matchMedia("(max-width: 900px)").matches;
-  }
-
-  function isPortraitViewport() {
-    return window.matchMedia("(orientation: portrait)").matches;
-  }
-
-  function shouldShowRotateHint() {
-    return isMobilePlayerUi() && isPortraitViewport();
-  }
-
-  function setRotateHintVisible(visible) {
-    const hint = $("rotateHint");
-    if (!hint) return;
-    hint.classList.toggle("is-visible", !!visible);
-  }
-
-  function bindRotateHint() {
-    let hideTimer = null;
-
-    const update = () => {
-      setRotateHintVisible(shouldShowRotateHint());
-    };
-
-    const showTemporarily = () => {
-      clearTimeout(hideTimer);
-      update();
-
-      if (shouldShowRotateHint()) {
-        hideTimer = setTimeout(() => {
-          setRotateHintVisible(false);
-        }, 2600);
-      }
-    };
-
-    const onResize = () => update();
-    const onOrientation = () => update();
-
-    window.addEventListener("resize", onResize);
-    window.addEventListener("orientationchange", onOrientation);
-
-    showTemporarily();
-
-    return () => {
-      clearTimeout(hideTimer);
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("orientationchange", onOrientation);
-      setRotateHintVisible(false);
-    };
-  }
-
-  function togglePlayerPlayback(player, playPauseBtn) {
-    if (!player) return;
-
-    if (player.paused) {
-      player.play().catch(() => {});
-    } else {
-      player.pause();
-    }
-
-    if (playPauseBtn) {
-      playPauseBtn.textContent = player.paused ? "Play" : "Pause";
-    }
   }
 
   function safeText(el, t) {
@@ -199,15 +106,11 @@
       const hasSrc = normalizeUrl(img.getAttribute("src"));
       if (!hasSrc) img.src = FALLBACK_THUMB;
 
-      img.addEventListener(
-        "error",
-        () => {
-          if (img.dataset.smFallbackApplied === "1") return;
-          img.dataset.smFallbackApplied = "1";
-          img.src = FALLBACK_THUMB;
-        },
-        { once: true }
-      );
+      img.addEventListener("error", () => {
+        if (img.dataset.smFallbackApplied === "1") return;
+        img.dataset.smFallbackApplied = "1";
+        img.src = FALLBACK_THUMB;
+      }, { once: true });
     });
   }
 
@@ -261,11 +164,24 @@
     return map?.[stepKey]?.[label] || String(label).toLowerCase();
   }
 
+  function shakeFiltersButton() {
+    if (!openAssistantBtn) return;
+    if (!window.matchMedia("(max-width: 900px)").matches) return;
+
+    openAssistantBtn.classList.remove("is-attention");
+    void openAssistantBtn.offsetWidth;
+    openAssistantBtn.classList.add("is-attention");
+
+    setTimeout(() => {
+      openAssistantBtn.classList.remove("is-attention");
+    }, 1600);
+  }
+
   window.addEventListener("resize", setPlayerViewportHeight);
   window.addEventListener("orientationchange", setPlayerViewportHeight);
   setPlayerViewportHeight();
 
-  // ---------------- Memberstack (cached) ----------------
+  // ---------------- Memberstack ----------------
   let _memberCache = null;
   let _memberCacheAt = 0;
 
@@ -277,6 +193,7 @@
     while (Date.now() - t0 < timeout) {
       const ms = window.$memberstackDom || window.$memberstack;
       const fn = ms?.getCurrentMember || ms?.getCurrentUser;
+
       if (typeof fn === "function") {
         try {
           const res = await fn.call(ms);
@@ -288,12 +205,13 @@
           }
         } catch (_) {}
       }
+
       await sleep(250);
     }
+
     return null;
   }
 
-  // ---------------- API helper ----------------
   async function api(path, opts = {}) {
     const member = await getMember(12000);
     if (!member?.id) {
@@ -321,6 +239,7 @@
       e.payload = payload;
       throw e;
     }
+
     return payload;
   }
 
@@ -330,6 +249,7 @@
   async function hydrateSavedCache() {
     try {
       const data = await api(`/v1/saved-moves?limit=200&offset=0`, { method: "GET" });
+
       const list = Array.isArray(data)
         ? data
         : Array.isArray(data?.items) ? data.items
@@ -337,13 +257,11 @@
         : Array.isArray(data?.moves) ? data.moves
         : [];
 
-      savedCache = (list || [])
-        .map((x) => ({
-          ...x,
-          id: x?.id || x?.video_id || x?.slug || x?.videoUrl || x?.video_url || "",
-          videoUrl: x?.videoUrl || x?.video_url || "",
-        }))
-        .filter((x) => x.id);
+      savedCache = list.map((x) => ({
+        ...x,
+        id: x?.id || x?.video_id || x?.slug || x?.videoUrl || x?.video_url || "",
+        videoUrl: x?.videoUrl || x?.video_url || "",
+      })).filter((x) => x.id);
     } catch (e) {
       console.warn("[SM] saved-moves GET failed", e?.status, e?.payload || e);
       savedCache = [];
@@ -363,6 +281,7 @@
       } catch (e) {
         console.warn("[SM] unsave failed", e?.status, e?.payload || e);
       }
+
       await hydrateSavedCache();
 
       emit("sm:save_clicked", {
@@ -389,7 +308,10 @@
     };
 
     try {
-      await api(`/v1/saved-moves`, { method: "POST", body: JSON.stringify(payload) });
+      await api(`/v1/saved-moves`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
     } catch (e) {
       console.warn("[SM] save failed", e?.status, e?.payload || e);
     }
@@ -437,9 +359,22 @@
     applyOverflow();
   }
 
+  function goToResults() {
+    closeAssistant();
+
+    const results = scope.querySelector(".results");
+    if (results) {
+      setTimeout(() => {
+        results.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 80);
+    }
+  }
+
   if (openAssistantBtn) openAssistantBtn.addEventListener("click", openAssistant);
   if (closeAssistantBtn) closeAssistantBtn.addEventListener("click", closeAssistant);
   if (assistantBackdropEl) assistantBackdropEl.addEventListener("click", closeAssistant);
+  if (showResultsBtn) showResultsBtn.addEventListener("click", goToResults);
+  if (backToResultsBtn) backToResultsBtn.addEventListener("click", goToResults);
 
   window.addEventListener("resize", () => {
     if (!isDrawerMode()) {
@@ -452,6 +387,9 @@
   });
 
   // ---------------- Video modal ----------------
+  let currentIndex = -1;
+  let returnToPlanAfterClose = false;
+
   function setModal(open) {
     modal.setAttribute("aria-hidden", open ? "false" : "true");
     locks.modal = !!open;
@@ -467,7 +405,6 @@
     setModal(false);
     modalContent.innerHTML = "";
     modal.classList.remove("isPlan");
-
     returnToPlanAfterClose = false;
 
     if (shouldReturnToPlan) {
@@ -533,22 +470,15 @@
   function bindFullscreenState(player) {
     const sync = () => {
       const nativeFs = isElementFullscreen(modal);
-      if (!nativeFs) {
-        setFsUiHidden(false);
-      }
+      if (!nativeFs) setFsUiHidden(false);
     };
 
     document.addEventListener("fullscreenchange", sync);
     document.addEventListener("webkitfullscreenchange", sync);
 
     if (player) {
-      player.addEventListener("webkitbeginfullscreen", () => {
-        setFsUiHidden(true);
-      });
-
-      player.addEventListener("webkitendfullscreen", () => {
-        setFsUiHidden(false);
-      });
+      player.addEventListener("webkitbeginfullscreen", () => setFsUiHidden(true));
+      player.addEventListener("webkitendfullscreen", () => setFsUiHidden(false));
     }
 
     return () => {
@@ -557,7 +487,67 @@
     };
   }
 
-  // ---------------- Keyboard ----------------
+  function isMobilePlayerUi() {
+    return window.matchMedia("(max-width: 900px)").matches;
+  }
+
+  function isPortraitViewport() {
+    return window.matchMedia("(orientation: portrait)").matches;
+  }
+
+  function shouldShowRotateHint() {
+    return isMobilePlayerUi() && isPortraitViewport();
+  }
+
+  function setRotateHintVisible(visible) {
+    const hint = $("rotateHint");
+    if (!hint) return;
+    hint.classList.toggle("is-visible", !!visible);
+  }
+
+  function bindRotateHint() {
+    let hideTimer = null;
+
+    const update = () => setRotateHintVisible(shouldShowRotateHint());
+
+    const showTemporarily = () => {
+      clearTimeout(hideTimer);
+      update();
+
+      if (shouldShowRotateHint()) {
+        hideTimer = setTimeout(() => {
+          setRotateHintVisible(false);
+        }, 2600);
+      }
+    };
+
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+
+    showTemporarily();
+
+    return () => {
+      clearTimeout(hideTimer);
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+      setRotateHintVisible(false);
+    };
+  }
+
+  function togglePlayerPlayback(player, playPauseBtn) {
+    if (!player) return;
+
+    if (player.paused) {
+      player.play().catch(() => {});
+    } else {
+      player.pause();
+    }
+
+    if (playPauseBtn) {
+      playPauseBtn.textContent = player.paused ? "Play" : "Pause";
+    }
+  }
+
   window.addEventListener("keydown", (e) => {
     const modalOpen = modal.getAttribute("aria-hidden") === "false";
 
@@ -570,6 +560,7 @@
       if (assistant.classList.contains("active")) {
         closeAssistant();
       }
+
       return;
     }
 
@@ -578,15 +569,10 @@
     if (e.code === "Space" || e.key === " ") {
       const player = $("playerVideo");
       const playPauseBtn = $("playPauseBtn");
-
       if (!player) return;
 
       const tag = String(document.activeElement?.tagName || "").toLowerCase();
-      const isTypingTarget =
-        tag === "input" ||
-        tag === "textarea" ||
-        document.activeElement?.isContentEditable;
-
+      const isTypingTarget = tag === "input" || tag === "textarea" || document.activeElement?.isContentEditable;
       if (isTypingTarget) return;
 
       e.preventDefault();
@@ -671,6 +657,79 @@
     chat.querySelectorAll(".options").forEach((el) => el.remove());
   }
 
+  function removeFilterHelp() {
+    chat.querySelectorAll(".filterHelp").forEach((el) => el.remove());
+  }
+
+  function showNoMatch(btn, label) {
+    removeFilterHelp();
+
+    if (btn) {
+      btn.classList.remove("is-shaking");
+      void btn.offsetWidth;
+      btn.classList.add("is-shaking");
+
+      setTimeout(() => {
+        btn.classList.remove("is-shaking");
+      }, 380);
+    }
+
+    const help = document.createElement("div");
+    help.className = "filterHelp";
+    help.innerHTML = `
+      <strong>No moves for “${escapeHtml(label)}”</strong>
+      Try another option or reset filters.
+    `;
+
+    const options = chat.querySelector(".options");
+    if (options) {
+      options.insertAdjacentElement("afterend", help);
+    } else {
+      chat.appendChild(help);
+    }
+
+    scrollChatBottom();
+  }
+
+  function getFilteredItems(nextState = state) {
+    const selected = {
+      env: normalizeFilterValue("env", nextState.env),
+      risk: normalizeFilterValue("risk", nextState.risk),
+      subject: normalizeFilterValue("subject", nextState.subject),
+      pilot: normalizeFilterValue("pilot", nextState.pilot),
+      mood: normalizeFilterValue("mood", nextState.mood),
+    };
+
+    return allItems.filter((item) => {
+      return (
+        hasMatch(item.env, selected.env) &&
+        hasMatch(item.risk, selected.risk) &&
+        hasMatch(item.subject, selected.subject) &&
+        hasMatch(item.pilot, selected.pilot) &&
+        hasMatch(item.mood, selected.mood)
+      );
+    });
+  }
+
+  function updateFilterUi() {
+    if (filterStep) {
+      const current = Math.min(stepIndex + 1, steps.length);
+      filterStep.textContent = stepIndex >= steps.length ? "Done" : `Step ${current}/${steps.length}`;
+    }
+
+    if (showResultsBtn) {
+      const count = filtered.length;
+
+      if (count <= 0) {
+        showResultsBtn.textContent = "No moves found";
+        showResultsBtn.disabled = true;
+      } else {
+        showResultsBtn.textContent = `Show ${count} ${count === 1 ? "move" : "moves"}`;
+        showResultsBtn.disabled = false;
+      }
+    }
+  }
+
   function renderOptions() {
     clearOptions();
     if (stepIndex >= steps.length) return;
@@ -693,6 +752,18 @@
           tag_name: label
         });
 
+        const candidateState = {
+          ...state,
+          [s.key]: label
+        };
+
+        if (!isInitialLoading && getFilteredItems(candidateState).length === 0) {
+          showNoMatch(btn, label);
+          return;
+        }
+
+        removeFilterHelp();
+
         history.push({
           stepIndex,
           prevChatHTML: chat.innerHTML,
@@ -710,12 +781,21 @@
 
         if (stepIndex >= steps.length) {
           clearOptions();
-          await addBotTyped("Done. Browse moves and cinematic plans in the results.");
+          await addBotTyped("Done. Your results are ready.");
+          updateFilterUi();
+
+          setTimeout(() => {
+            if (showResultsBtn && !showResultsBtn.disabled) {
+              showResultsBtn.focus();
+            }
+          }, 200);
+
           return;
         }
 
         await addBotTyped(steps[stepIndex].text);
         renderOptions();
+        updateFilterUi();
       });
 
       wrap.appendChild(btn);
@@ -734,12 +814,15 @@
       if (!last) return;
 
       stepIndex = last.stepIndex;
+
       Object.keys(state).forEach((k) => delete state[k]);
       Object.assign(state, last.prevState || {});
+
       chat.innerHTML = last.prevChatHTML;
 
       applyFilters();
       renderOptions();
+      updateFilterUi();
       scrollChatBottom();
     });
   }
@@ -749,9 +832,13 @@
 
     history.length = 0;
     stepIndex = 0;
+
     Object.keys(state).forEach((k) => delete state[k]);
+
     chat.innerHTML = "";
     clearOptions();
+    removeFilterHelp();
+
     if (backBtn) backBtn.disabled = true;
 
     await addBotTyped("Hi. Let’s browse moves and cinematic plans.");
@@ -759,6 +846,7 @@
 
     applyFilters();
     renderOptions();
+    updateFilterUi();
   });
 
   // ---------------- Data ----------------
@@ -769,40 +857,26 @@
 
   function showSkeletons(count = 8) {
     grid.innerHTML = "";
+
     for (let i = 0; i < count; i++) {
       const el = document.createElement("div");
       el.className = "card sm-skeleton-card";
       el.style.minHeight = "220px";
-      el.innerHTML = `
-        <div class="sm-skeleton-fill" style="position:absolute;inset:0;"></div>
-      `;
+      el.innerHTML = `<div class="sm-skeleton-fill" style="position:absolute;inset:0;"></div>`;
       grid.appendChild(el);
     }
+
     if (moreBtn) moreBtn.style.display = "none";
   }
 
   function applyFilters() {
-    const selected = {
-      env: normalizeFilterValue("env", state.env),
-      risk: normalizeFilterValue("risk", state.risk),
-      subject: normalizeFilterValue("subject", state.subject),
-      pilot: normalizeFilterValue("pilot", state.pilot),
-      mood: normalizeFilterValue("mood", state.mood),
-    };
-
-    filtered = allItems.filter((item) => {
-      return (
-        hasMatch(item.env, selected.env) &&
-        hasMatch(item.risk, selected.risk) &&
-        hasMatch(item.subject, selected.subject) &&
-        hasMatch(item.pilot, selected.pilot) &&
-        hasMatch(item.mood, selected.mood)
-      );
-    });
+    filtered = getFilteredItems(state);
 
     safeText(matchCount, String(filtered.length));
     visibleCount = 12;
+
     renderResults();
+    updateFilterUi();
 
     if (!libraryViewedSent && allItems.length) {
       libraryViewedSent = true;
@@ -821,7 +895,6 @@
   function renderMoveCard(v, i) {
     const id = getVideoId(v);
     const saved = isSaved(id);
-
     const thumb = pickThumb(v?.thumb);
     const title = escapeHtml(v?.title || "");
 
@@ -920,15 +993,7 @@
       </div>
     `;
 
-    const img = card.querySelector(".planImg");
-    if (img) {
-      img.addEventListener("error", () => {
-        if (img.dataset.smFallbackApplied === "1") return;
-        img.dataset.smFallbackApplied = "1";
-        img.src = FALLBACK_THUMB;
-      });
-    }
-
+    attachImgFallback(card);
     return card;
   }
 
@@ -955,7 +1020,11 @@
     });
 
     attachImgFallback(grid);
-    if (moreBtn) moreBtn.style.display = filtered.length > visibleCount ? "block" : "none";
+
+    if (moreBtn) {
+      moreBtn.style.display = filtered.length > visibleCount ? "block" : "none";
+    }
+
     safeText(matchCount, String(filtered.length));
   }
 
@@ -965,21 +1034,6 @@
       renderResults();
     });
   }
-
-  function syncCardSaveUI(video) {
-    const id = getVideoId(video);
-    const saved = isSaved(id);
-    const sel = `.sm-save[data-save-id="${CSS.escape(String(id))}"]`;
-    const btn = grid.querySelector(sel);
-    if (btn) {
-      btn.classList.toggle("isSaved", saved);
-      btn.setAttribute("aria-label", saved ? "Unsave" : "Save");
-    }
-  }
-
-  // ---------------- Video player ----------------
-  let currentIndex = -1;
-  let returnToPlanAfterClose = false;
 
   function buildVideoPlayer(video) {
     const src = normalizeUrl(video?.videoUrl || video?.video_url);
@@ -1002,16 +1056,7 @@
 
           <div class="player__controls" id="playerControls">
             <div class="player__progressWrap">
-              <input
-                id="playerSeek"
-                class="player__seek"
-                type="range"
-                min="0"
-                max="100"
-                step="0.1"
-                value="0"
-                aria-label="Video progress"
-              >
+              <input id="playerSeek" class="player__seek" type="range" min="0" max="100" step="0.1" value="0" aria-label="Video progress">
             </div>
 
             <div class="player__bar">
@@ -1094,12 +1139,14 @@
       updateTimeUi();
 
       if (watched50Tracked) return;
+
       const duration = Number(player.duration || 0);
       const current = Number(player.currentTime || 0);
       if (!duration || duration <= 0) return;
 
       if (current / duration >= 0.5) {
         watched50Tracked = true;
+
         emit("sm:video_watched_50", {
           item_id: analyticsId,
           item_type: "move",
@@ -1137,9 +1184,11 @@
       playerSeek.addEventListener("pointerup", () => {
         const duration = Number(player.duration || 0);
         const value = Number(playerSeek.value || 0);
+
         if (duration > 0) {
           player.currentTime = (value / 100) * duration;
         }
+
         isSeeking = false;
         updateTimeUi();
       });
@@ -1157,9 +1206,11 @@
       playerSeek.addEventListener("change", () => {
         const duration = Number(player.duration || 0);
         const value = Number(playerSeek.value || 0);
+
         if (duration > 0) {
           player.currentTime = (value / 100) * duration;
         }
+
         isSeeking = false;
         updateTimeUi();
       });
@@ -1180,8 +1231,8 @@
       videoWrap.addEventListener("click", onVideoTap);
     }
 
-    let removeFsBindings = bindFullscreenState(player);
-    let removeRotateHintBindings = bindRotateHint();
+    const removeFsBindings = bindFullscreenState(player);
+    const removeRotateHintBindings = bindRotateHint();
 
     if (fsBtn) {
       fsBtn.addEventListener("click", async () => {
@@ -1200,9 +1251,7 @@
     }
 
     return () => {
-      try {
-        player?.pause();
-      } catch (_) {}
+      try { player?.pause(); } catch (_) {}
 
       if (videoWrap) {
         videoWrap.removeEventListener("click", onVideoTap);
@@ -1216,6 +1265,7 @@
 
       if (removeFsBindings) removeFsBindings();
       if (removeRotateHintBindings) removeRotateHintBindings();
+
       setFsUiHidden(false);
     };
   }
@@ -1244,6 +1294,7 @@
     });
 
     buildVideoPlayer(video);
+
     window.scrollTo(0, 0);
     setPlayerViewportHeight();
     setModal(true);
@@ -1278,11 +1329,6 @@
     const onBackdrop = () => closeModal();
     modalBackdrop.addEventListener("click", onBackdrop);
 
-    modal._cleanup = () => {
-      modalBackdrop.removeEventListener("click", onBackdrop);
-      playerCleanup();
-    };
-
     const playerCleanup = bindPlayerUi({
       player,
       playPauseBtn,
@@ -1300,9 +1346,13 @@
       analyticsId: getVideoId(video),
       analyticsTitle: video?.title || ""
     });
+
+    modal._cleanup = () => {
+      modalBackdrop.removeEventListener("click", onBackdrop);
+      playerCleanup();
+    };
   }
 
-  // ---------------- External move-player bridge ----------------
   window.addEventListener("sm:open-move-player", (e) => {
     returnToPlanAfterClose = true;
 
@@ -1312,9 +1362,7 @@
     const directUrl = normalizeUrl(move?.videoUrl || move?.video_url || "");
     if (!directUrl) return;
 
-    const idx = filtered.findIndex(
-      (x) => !isPlan(x) && String(getVideoId(x)) === String(getVideoId(move))
-    );
+    const idx = filtered.findIndex((x) => !isPlan(x) && String(getVideoId(x)) === String(getVideoId(move)));
 
     if (idx >= 0) {
       openPlayer(idx, { preservePlanReturn: true });
@@ -1360,11 +1408,6 @@
     const onBackdrop = () => closeModal();
     modalBackdrop.addEventListener("click", onBackdrop);
 
-    modal._cleanup = () => {
-      modalBackdrop.removeEventListener("click", onBackdrop);
-      playerCleanup();
-    };
-
     const playerCleanup = bindPlayerUi({
       player,
       playPauseBtn,
@@ -1382,9 +1425,13 @@
       analyticsId: getVideoId(move),
       analyticsTitle: move?.title || "Move video"
     });
+
+    modal._cleanup = () => {
+      modalBackdrop.removeEventListener("click", onBackdrop);
+      playerCleanup();
+    };
   });
 
-  // ---------------- Grid click ----------------
   grid.addEventListener("click", async (e) => {
     const card = e.target.closest(".card, .cardPlan");
     if (!card) return;
@@ -1396,9 +1443,11 @@
     if (!item) return;
 
     const saveBtn = e.target.closest(".sm-save");
+
     if (saveBtn) {
       e.preventDefault();
       e.stopPropagation();
+
       if (isPlan(item)) return;
 
       const nowSaved = await toggleSaved(item);
@@ -1417,21 +1466,22 @@
       window.dispatchEvent(new CustomEvent("sm:open-plan", {
         detail: {
           plan: item,
-          allItems: allItems
+          allItems
         }
       }));
+
       return;
     }
 
     openPlayer(idx);
   });
 
-  // ---------------- Load JSON ----------------
   async function loadItems() {
     try {
       safeText(matchCount, "Loading…");
       isInitialLoading = true;
       showSkeletons(8);
+      updateFilterUi();
 
       const res = await fetch(CDN_INDEX_URL, { cache: "no-store" });
       if (!res.ok) throw new Error("HTTP " + res.status);
@@ -1444,26 +1494,44 @@
 
       allItems = [...plans, ...moves];
       isInitialLoading = false;
+
       applyFilters();
+
+      setTimeout(() => {
+        shakeFiltersButton();
+      }, 700);
+
     } catch (e) {
       console.error("[SM] loadVideos error:", e);
+
       isInitialLoading = false;
       safeText(matchCount, "—");
+
       grid.innerHTML = `<div class="card" style="padding:14px">Failed to load videos.</div>`;
+
       if (moreBtn) moreBtn.style.display = "none";
       if (resultsHead) resultsHead.style.display = "none";
+
+      updateFilterUi();
     }
   }
 
-  // ---------------- Init ----------------
   (async () => {
     if (backBtn) backBtn.disabled = true;
 
     await addBotTyped("Hi. Let’s browse moves and cinematic plans.");
     await addBotTyped(steps[0].text);
+
     renderOptions();
+    updateFilterUi();
 
     loadItems();
+
+    setTimeout(() => {
+      if (!assistant.classList.contains("active")) {
+        shakeFiltersButton();
+      }
+    }, 4000);
 
     getMember(12000)
       .then((member) => {
