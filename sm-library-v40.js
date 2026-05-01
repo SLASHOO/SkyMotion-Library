@@ -1,5 +1,3 @@
-/* ========================================================= SKYMOTION — LIBRARY v1 (STANDALONE) CLEAN - Plans + Moves mixed by default - OLD #modal = fullscreen video player only - Plan viewer removed from this embed - Plan cards dispatch event to external plan viewer - Robust image fallback - Scoped. Webflow-safe. - FILTERS RESTORED - FASTER INITIAL LOAD - CLEANED FROM SESSION REMNANTS - ORDERED CHAT FLOW - LIGHT CHAT HISTORY - LOADING SKELETON - ANALYTICS EVENTS ADDED ========================================================= */
-
 (() => {
   "use strict";
   if (window.__SM_LIBRARY_V1_CLEAN_SPLIT__) return;
@@ -29,8 +27,8 @@
   const matchCount = $("matchCount");
   const resetBtn = $("resetBtn");
   const backBtn = $("backBtn");
-  const filterStep = $("filterStep");
   const showResultsBtn = $("showResultsBtn");
+  const filterProgressBar = $("filterProgressBar");
   const backToResultsBtn = $("backToResultsBtn");
   const moreBtn = $("moreBtn");
   const resultsHead = $("resultsHead");
@@ -102,6 +100,7 @@
 
   function attachImgFallback(root) {
     if (!root) return;
+
     root.querySelectorAll("img").forEach((img) => {
       const hasSrc = normalizeUrl(img.getAttribute("src"));
       if (!hasSrc) img.src = FALLBACK_THUMB;
@@ -181,7 +180,6 @@
   window.addEventListener("orientationchange", setPlayerViewportHeight);
   setPlayerViewportHeight();
 
-  // ---------------- Memberstack ----------------
   let _memberCache = null;
   let _memberCacheAt = 0;
 
@@ -190,6 +188,7 @@
     if (_memberCache && now - _memberCacheAt < 15000) return _memberCache;
 
     const t0 = Date.now();
+
     while (Date.now() - t0 < timeout) {
       const ms = window.$memberstackDom || window.$memberstack;
       const fn = ms?.getCurrentMember || ms?.getCurrentUser;
@@ -198,6 +197,7 @@
         try {
           const res = await fn.call(ms);
           const m = res?.data || res;
+
           if (m?.id) {
             _memberCache = m;
             _memberCacheAt = Date.now();
@@ -214,6 +214,7 @@
 
   async function api(path, opts = {}) {
     const member = await getMember(12000);
+
     if (!member?.id) {
       const err = new Error("LOGIN_REQUIRED");
       err.status = 401;
@@ -228,7 +229,6 @@
     }
 
     const r = await fetch(API_BASE + path, { method: opts.method || "GET", ...opts, headers });
-
     const ct = (r.headers.get("content-type") || "").toLowerCase();
     const isJson = ct.includes("application/json");
     const payload = isJson ? await r.json().catch(() => null) : await r.text().catch(() => null);
@@ -243,7 +243,6 @@
     return payload;
   }
 
-  // ---------------- Saved moves ----------------
   let savedCache = [];
 
   async function hydrateSavedCache() {
@@ -328,7 +327,6 @@
     return true;
   }
 
-  // ---------------- UI locks ----------------
   const locks = { drawer: false, modal: false };
 
   function applyOverflow() {
@@ -338,7 +336,6 @@
     document.body.style.overflow = lock ? "hidden" : "";
   }
 
-  // ---------------- Drawer ----------------
   function isDrawerMode() {
     return window.matchMedia("(max-width: 900px)").matches;
   }
@@ -386,15 +383,14 @@
     }
   });
 
-  // ---------------- Video modal ----------------
-  let currentIndex = -1;
-  let returnToPlanAfterClose = false;
-
   function setModal(open) {
     modal.setAttribute("aria-hidden", open ? "false" : "true");
     locks.modal = !!open;
     applyOverflow();
   }
+
+  let currentIndex = -1;
+  let returnToPlanAfterClose = false;
 
   function closeModal() {
     const shouldReturnToPlan = returnToPlanAfterClose === true;
@@ -469,8 +465,7 @@
 
   function bindFullscreenState(player) {
     const sync = () => {
-      const nativeFs = isElementFullscreen(modal);
-      if (!nativeFs) setFsUiHidden(false);
+      if (!isElementFullscreen(modal)) setFsUiHidden(false);
     };
 
     document.addEventListener("fullscreenchange", sync);
@@ -580,7 +575,6 @@
     }
   });
 
-  // ---------------- Chat / filters ----------------
   let isBusy = false;
   const history = [];
 
@@ -682,14 +676,16 @@
     `;
 
     const options = chat.querySelector(".options");
-    if (options) {
-      options.insertAdjacentElement("afterend", help);
-    } else {
-      chat.appendChild(help);
-    }
+    if (options) options.insertAdjacentElement("afterend", help);
+    else chat.appendChild(help);
 
     scrollChatBottom();
   }
+
+  let allItems = [];
+  let filtered = [];
+  let visibleCount = 12;
+  let isInitialLoading = true;
 
   function getFilteredItems(nextState = state) {
     const selected = {
@@ -700,31 +696,30 @@
       mood: normalizeFilterValue("mood", nextState.mood),
     };
 
-    return allItems.filter((item) => {
-      return (
-        hasMatch(item.env, selected.env) &&
-        hasMatch(item.risk, selected.risk) &&
-        hasMatch(item.subject, selected.subject) &&
-        hasMatch(item.pilot, selected.pilot) &&
-        hasMatch(item.mood, selected.mood)
-      );
-    });
+    return allItems.filter((item) => (
+      hasMatch(item.env, selected.env) &&
+      hasMatch(item.risk, selected.risk) &&
+      hasMatch(item.subject, selected.subject) &&
+      hasMatch(item.pilot, selected.pilot) &&
+      hasMatch(item.mood, selected.mood)
+    ));
   }
 
   function updateFilterUi() {
-    if (filterStep) {
-      const current = Math.min(stepIndex + 1, steps.length);
-      filterStep.textContent = stepIndex >= steps.length ? "Done" : `Step ${current}/${steps.length}`;
+    if (filterProgressBar) {
+      const answered = Math.min(stepIndex, steps.length);
+      const progress = Math.max(1, (answered / steps.length) * 100);
+      filterProgressBar.style.width = `${progress}%`;
     }
 
     if (showResultsBtn) {
       const count = filtered.length;
 
       if (count <= 0) {
-        showResultsBtn.textContent = "No moves found";
+        showResultsBtn.innerHTML = "No moves found";
         showResultsBtn.disabled = true;
       } else {
-        showResultsBtn.textContent = `Show ${count} ${count === 1 ? "move" : "moves"}`;
+        showResultsBtn.innerHTML = `Show <span id="matchCount">${count}</span> ${count === 1 ? "move" : "moves"}`;
         showResultsBtn.disabled = false;
       }
     }
@@ -752,10 +747,7 @@
           tag_name: label
         });
 
-        const candidateState = {
-          ...state,
-          [s.key]: label
-        };
+        const candidateState = { ...state, [s.key]: label };
 
         if (!isInitialLoading && getFilteredItems(candidateState).length === 0) {
           showNoMatch(btn, label);
@@ -783,13 +775,6 @@
           clearOptions();
           await addBotTyped("Done. Your results are ready.");
           updateFilterUi();
-
-          setTimeout(() => {
-            if (showResultsBtn && !showResultsBtn.disabled) {
-              showResultsBtn.focus();
-            }
-          }, 200);
-
           return;
         }
 
@@ -849,12 +834,6 @@
     updateFilterUi();
   });
 
-  // ---------------- Data ----------------
-  let allItems = [];
-  let filtered = [];
-  let visibleCount = 12;
-  let isInitialLoading = true;
-
   function showSkeletons(count = 8) {
     grid.innerHTML = "";
 
@@ -871,7 +850,6 @@
 
   function applyFilters() {
     filtered = getFilteredItems(state);
-
     safeText(matchCount, String(filtered.length));
     visibleCount = 12;
 
@@ -887,9 +865,11 @@
   }
 
   function bookmarkSvg() {
-    return `<svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M6.5 3.5h11c.83 0 1.5.67 1.5 1.5v16.1c0 .78-.86 1.26-1.53.86L12 19.35 6.53 21.96C5.86 22.26 5 21.78 5 21.1V5c0-.83.67-1.5 1.5-1.5z"></path>
-    </svg>`;
+    return `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6.5 3.5h11c.83 0 1.5.67 1.5 1.5v16.1c0 .78-.86 1.26-1.53.86L12 19.35 6.53 21.96C5.86 22.26 5 21.78 5 21.1V5c0-.83.67-1.5 1.5-1.5z"></path>
+      </svg>
+    `;
   }
 
   function renderMoveCard(v, i) {
@@ -979,8 +959,8 @@
         <img class="planImg" src="${cover}" alt="${escapeHtml(titleRaw)}" loading="lazy">
 
         <div class="planPills">
-          ${clipText ? `<span class="pill">${escapeHtml(clipText)}</span>` : ``}
-          ${shotsCount ? `<span class="pill">${escapeHtml(String(shotsCount))} shots</span>` : ``}
+          ${clipText ? `<span class="pill">${escapeHtml(clipText)}</span>` : ""}
+          ${shotsCount ? `<span class="pill">${escapeHtml(String(shotsCount))} shots</span>` : ""}
           <span class="pill pill--plan">Plan</span>
         </div>
 
@@ -1008,6 +988,7 @@
       if (moreBtn) moreBtn.style.display = "none";
       safeText(matchCount, "0");
       if (resultsHead) resultsHead.style.display = "none";
+      updateFilterUi();
       return;
     }
 
@@ -1500,7 +1481,6 @@
       setTimeout(() => {
         shakeFiltersButton();
       }, 700);
-
     } catch (e) {
       console.error("[SM] loadVideos error:", e);
 
@@ -1540,6 +1520,7 @@
       })
       .then(() => {
         renderResults();
+        updateFilterUi();
       })
       .catch(() => null);
   })();
