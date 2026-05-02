@@ -1524,4 +1524,79 @@
       })
       .catch(() => null);
   })();
+
+   (function setupPlayerAutoHideUI(){
+  const modal = document.getElementById("modal");
+  if (!modal) return;
+
+  let hideTimer = null;
+
+  function isPlayerOpen(){
+    return modal.getAttribute("aria-hidden") === "false";
+  }
+
+  function showUI(){
+    if (!isPlayerOpen()) return;
+
+    modal.classList.remove("is-fs-ui-hidden");
+
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      modal.classList.add("is-fs-ui-hidden");
+    }, 2800);
+  }
+
+  function hideUI(){
+    if (!isPlayerOpen()) return;
+    modal.classList.add("is-fs-ui-hidden");
+  }
+
+  modal.addEventListener("mousemove", showUI);
+  modal.addEventListener("touchstart", function(e){
+    const clickedControl = e.target.closest(
+      ".player__controls, .player__top, button, input"
+    );
+
+    if (clickedControl) {
+      showUI();
+      return;
+    }
+
+    if (modal.classList.contains("is-fs-ui-hidden")) {
+      showUI();
+    } else {
+      hideUI();
+    }
+  }, { passive:true });
+
+  modal.addEventListener("click", function(e){
+    const clickedControl = e.target.closest(
+      ".player__controls, .player__top, button, input"
+    );
+
+    if (clickedControl) {
+      showUI();
+      return;
+    }
+
+    if (modal.classList.contains("is-fs-ui-hidden")) {
+      showUI();
+    } else {
+      hideUI();
+    }
+  });
+
+  const observer = new MutationObserver(() => {
+    if (isPlayerOpen()) {
+      showUI();
+    } else {
+      clearTimeout(hideTimer);
+      modal.classList.remove("is-fs-ui-hidden");
+    }
+  });
+
+  observer.observe(modal, {
+    attributes:true,
+    attributeFilter:["aria-hidden"]
+  });
 })();
