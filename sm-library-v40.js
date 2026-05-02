@@ -1598,5 +1598,7 @@
   observer.observe(modal, {
     attributes:true,
     attributeFilter:["aria-hidden"]
-  });
+    });
+  })();
+
 })();
